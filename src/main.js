@@ -43,6 +43,30 @@ function generateFreqGrid() {
 
 state.wList = generateFreqGrid();
 
+// Función auxiliar para renderizar KaTeX seguro
+function renderTex(tex, display = false) {
+  try {
+    return katex.renderToString(tex, { displayMode: display, throwOnError: false });
+  } catch (e) {
+    return `<span>${tex}</span>`;
+  }
+}
+
+// Limpia cualquier residuo de $...$ o expresiones LaTeX inline en el HTML para que NUNCA aparezcan códigos crudos
+function cleanMath(html) {
+  if (!html) return '';
+  let res = html;
+  // Reemplazar $$ ... $$ por bloques KaTeX
+  res = res.replace(/\$\$([^$]+)\$\$/g, (_, math) => renderTex(math.trim(), true));
+  // Reemplazar $ ... $ por KaTeX inline
+  res = res.replace(/\$([^$]+)\$/g, (_, math) => {
+    let clean = math.trim();
+    if (clean.startsWith('omega')) clean = '\\' + clean;
+    return renderTex(clean, false);
+  });
+  return res;
+}
+
 // Elementos del DOM
 const appElement = document.getElementById('app');
 const tfInput = document.getElementById('tfInput');
@@ -236,7 +260,7 @@ function renderBodePlot() {
           <p><b>1. Extracción de constantes de tiempo del denominador:</b></p>
           ${realP.map(wc => {
             const tau = 1 / wc;
-            return `<p>• Factor $(s + ${wc.toFixed(2)}) = ${wc.toFixed(2)} \\cdot \\left(1 + \\frac{s}{${wc.toFixed(2)}}\\right) = ${wc.toFixed(2)}(1 + ${tau.toFixed(3)}s)$</p>`;
+            return `<p style="margin:3px 0;">• Factor <b>(s + ${wc.toFixed(2)}) = ${wc.toFixed(2)} · (1 + s/${wc.toFixed(2)}) = ${wc.toFixed(2)}(1 + ${tau.toFixed(3)}s)</b></p>`;
           }).join('')}
           <p style="margin-top:4px; color:#cbd5e1;">Producto de constantes extraídas: <b>${realP.map(p => p.toFixed(2)).join(' × ')} = ${realP.reduce((a, b) => a * b, 1).toFixed(2)}</b></p>
         </div>
@@ -245,22 +269,22 @@ function renderBodePlot() {
 
     desc = `
       <p><b>Función Original en el dominio de Laplace:</b></p>
-      <div style="background:#11111e; padding:6px 10px; border-radius:4px; margin:4px 0;">
+      <div style="background:#11111e; padding:6px 10px; border-radius:4px; margin:4px 0; text-align:center;">
         ${renderTex(`G(s) = ${state.tfStr}`, true)}
       </div>
-      <p><b>Polos de Lazo Abierto ($D(s)=0$):</b></p>
+      <p><b>Polos de Lazo Abierto (D(s) = 0):</b></p>
       <p>• ${rootsDen.map(r => `${r.re.toFixed(2)} + ${r.im.toFixed(2)}j`).join(' ; ') || 'Ninguno'}</p>
-      <p><b>Ceros de Lazo Abierto ($N(s)=0$):</b> ${rootsNum.length > 0 ? rootsNum.map(r => `${r.re.toFixed(2)} + ${r.im.toFixed(2)}j`).join(' ; ') : 'Ninguno (sin ceros finitos).'}</p>
+      <p><b>Ceros de Lazo Abierto (N(s) = 0):</b> ${rootsNum.length > 0 ? rootsNum.map(r => `${r.re.toFixed(2)} + ${r.im.toFixed(2)}j`).join(' ; ') : 'Ninguno (sin ceros finitos).'}</p>
 
       ${factHtml}
 
       <div style="background:#171728; padding:8px; border-radius:6px; margin:6px 0;">
-        <p><b>2. Cálculo de la Ganancia de Bode ($K_{Bode}$):</b></p>
+        <p><b>2. Cálculo de la Ganancia de Bode (K<sub>Bode</sub>):</b></p>
         <p>Dividimos el numerador entre el producto de constantes extraídas:</p>
         <div style="margin:4px 0; text-align:center;">
-          ${renderTex(`K_{Bode} = ${kbode.toFixed(3)} \\quad \\Longrightarrow \\quad 20\\log_{10}(${kbode.toFixed(3)}) = ${kbodeDb.toFixed(2)}\\text{ dB}`)}
+          ${renderTex(`K_{Bode} = ${kbode.toFixed(3)} \\quad \\Longrightarrow \\quad 20\\log_{10}(${kbode.toFixed(3)}) = ${kbodeDb.toFixed(2)}\\text{ dB}`, true)}
         </div>
-        <p>Esta ganancia define el valor de magnitud en baja frecuencia donde la recta corta $\\omega = 1\\text{ rad/s}$.</p>
+        <p>Esta ganancia define el valor de magnitud en baja frecuencia donde la recta corta a <b>ω = 1 rad/s</b>.</p>
       </div>
 
       <p><b>3. Factores Canónicos Identificados (${comps.length}):</b></p>
@@ -359,7 +383,7 @@ function renderBodePlot() {
         <span style="color:#94a3b8; font-weight:bold;">- - Asíntota Lineal</span>
       </div>
       <p><b>Comparación Asintótica vs Real:</b></p>
-      <p>• <b>Magnitud:</b> Cerca de cada frecuencia de corte $\\omega_c$, la curva real se redondea suavemente (para un polo simple, la curva real pasa <b>3 dB por debajo</b> de la esquina asintótica).</p>
+      <p>• <b>Magnitud:</b> Cerca de cada frecuencia de corte <b>ω<sub>c</sub></b>, la curva real se redondea suavemente (para un polo simple, la curva real pasa <b>3 dB por debajo</b> de la esquina asintótica).</p>
       <p>• <b>Fase:</b> La curva real transiciona continuamente entre 0°, -45° y -90° por polo sin esquinas bruscas.</p>
     `;
 
@@ -405,7 +429,7 @@ function renderBodePlot() {
       line: { color: '#ffd700', width: 2.2 }
     });
   } else {
-    title = `Paso Final: Cálculo de Cruces y Márgenes de Estabilidad`;
+    title = `Paso Final: Cruces y Márgenes de Estabilidad`;
     const pm = state.margins.PM;
     const gm = state.margins.GM;
     const w_gc = state.margins.w_gc;
@@ -414,22 +438,22 @@ function renderBodePlot() {
 
     desc = `
       <div style="background:#171728; padding:8px; border-radius:6px; margin-bottom:6px;">
-        <p><b>1. Frecuencia de Cruce de Ganancia ($\omega_{cg}$):</b></p>
-        <p>Frecuencia donde la magnitud cruza $0\\text{ dB}$ ($|G(j\\omega)| = 1$):</p>
-        <p>• $\\omega_{cg} = <b>${w_gc ? w_gc.toFixed(3) + ' rad/s' : 'No cruza 0 dB'}</b></p>
-        <p><b>Margen de Fase (MF):</b> Distancia angular a $-180^\\circ$ en $\\omega_{cg}$:</p>
-        <div style="margin:2px 0;">
-          ${renderTex(`MF = 180^\\circ + \\angle G(j\\omega_{cg}) = ${pm !== null ? pm.toFixed(2) + '^\\circ' : '\\infty'}`)}
+        <p><b>1. Frecuencia de Cruce de Ganancia (ω<sub>cg</sub>):</b></p>
+        <p>Frecuencia donde la magnitud cruza <b>0 dB</b> (|G(jω)| = 1):</p>
+        <p>• <b>ω<sub>cg</sub> = ${w_gc ? w_gc.toFixed(3) + ' rad/s' : 'No cruza 0 dB'}</b></p>
+        <p><b>Margen de Fase (MF):</b> Distancia angular a <b>-180°</b> en ω<sub>cg</sub>:</p>
+        <div style="margin:4px 0; text-align:center;">
+          ${renderTex(`MF = 180^\\circ + \\angle G(j\\omega_{cg}) = ${pm !== null ? pm.toFixed(2) + '^\\circ' : '\\infty'}`, true)}
         </div>
       </div>
 
       <div style="background:#171728; padding:8px; border-radius:6px; margin-bottom:6px;">
-        <p><b>2. Frecuencia de Cruce de Fase ($\omega_{cp}$):</b></p>
-        <p>Frecuencia donde la fase cruza $-180^\\circ$:</p>
-        <p>• $\\omega_{cp} = <b>${w_pc ? w_pc.toFixed(3) + ' rad/s' : 'No cruza -180°'}</b></p>
-        <p><b>Margen de Ganancia (MG):</b> Atenuación por debajo de $0\\text{ dB}$ en $\\omega_{cp}$:</p>
-        <div style="margin:2px 0;">
-          ${renderTex(`MG = -20\\log_{10}|G(j\\omega_{cp})| = ${gm !== null ? gm.toFixed(2) + '\\text{ dB}' : '\\infty'}`)}
+        <p><b>2. Frecuencia de Cruce de Fase (ω<sub>cp</sub>):</b></p>
+        <p>Frecuencia donde la fase cruza <b>-180°</b> (∠G(jω) = -180°):</p>
+        <p>• <b>ω<sub>cp</sub> = ${w_pc ? w_pc.toFixed(3) + ' rad/s' : 'No cruza -180°'}</b></p>
+        <p><b>Margen de Ganancia (MG):</b> Atenuación por debajo de <b>0 dB</b> en ω<sub>cp</sub>:</p>
+        <div style="margin:4px 0; text-align:center;">
+          ${renderTex(`MG = -20\\log_{10}|G(j\\omega_{cp})| = ${gm !== null ? gm.toFixed(2) + '\\text{ dB}' : '\\infty'}`, true)}
         </div>
       </div>
 
@@ -503,7 +527,7 @@ function renderBodePlot() {
   }
 
   explanationTitle.textContent = title;
-  explanationBody.innerHTML = desc;
+  explanationBody.innerHTML = cleanMath(desc);
 
   const layout = {
     ...darkLayoutCommon,
@@ -709,7 +733,7 @@ function renderNyquistPlot() {
   }
 
   explanationTitle.textContent = title;
-  explanationBody.innerHTML = desc;
+  explanationBody.innerHTML = cleanMath(desc);
 
   // Viewport inteligente enfocado en el rango relevante para evitar aplanamiento
   const layout = {
@@ -725,27 +749,27 @@ function renderNyquistPlot() {
 // 3. LUGAR DE LAS RAÍCES (ROOT LOCUS)
 // ==========================================
 function renderLocusPlot() {
-  state.maxSteps = 2;
+  state.maxSteps = 1;
   stepCounter.textContent = `Paso ${state.step} de ${state.maxSteps}`;
   btnPrevStep.disabled = state.step === 0;
   btnNextStep.disabled = state.step === state.maxSteps;
 
+  const traces = [];
   const poles = findRoots(state.parsedTF.den);
   const zeros = findRoots(state.parsedTF.num);
 
-  const traces = [];
+  // Polos y Ceros base
+  if (poles.length > 0) {
+    traces.push({
+      x: poles.map(p => p.re),
+      y: poles.map(p => p.im),
+      mode: 'markers',
+      type: 'scatter',
+      name: 'Polos (K=0)',
+      marker: { color: '#ef4444', size: 10, symbol: 'x', line: { width: 2.5 } }
+    });
+  }
 
-  // Polos de lazo abierto (X)
-  traces.push({
-    x: poles.map(p => p.re),
-    y: poles.map(p => p.im),
-    mode: 'markers',
-    type: 'scatter',
-    name: 'Polos (K=0)',
-    marker: { color: '#ef4444', size: 10, symbol: 'x', line: { width: 3 } }
-  });
-
-  // Ceros de lazo abierto (O)
   if (zeros.length > 0) {
     traces.push({
       x: zeros.map(z => z.re),
@@ -801,20 +825,20 @@ function renderLocusPlot() {
 
   if (state.step === 0) {
     explanationTitle.textContent = "Paso 0: Polos, Ceros y Reglas del Lugar de Raíces";
-    explanationBody.innerHTML = `
+    explanationBody.innerHTML = cleanMath(`
       <p><b>Número de Polos (n):</b> ${n} | <b>Número de Ceros (m):</b> ${m}</p>
       <p><b>Número de Ramas hacia el infinito (n - m):</b> ${numAsymptotes}</p>
-      <p><b>Centroide de Asíntotas:</b> σ_a = <b>${sigmaA.toFixed(2)}</b></p>
+      <p><b>Centroide de Asíntotas:</b> σ<sub>a</sub> = <b>${sigmaA.toFixed(2)}</b></p>
       <p>Las ramas nacen en los polos (K=0) y mueren en los ceros o se van a ∞ a lo largo de las asíntotas.</p>
-    `;
+    `);
   } else {
     explanationTitle.textContent = "Paso Final: Análisis de Estabilidad con Ganancia K";
-    explanationBody.innerHTML = `
+    explanationBody.innerHTML = cleanMath(`
       <p>El eje imaginario (x = 0) marca la frontera entre estabilidad e inestabilidad:</p>
       <p>• <b>Izquierda (Re &lt; 0):</b> Polos estables.</p>
       <p>• <b>Derecha (Re &gt; 0):</b> Polos inestables.</p>
       <p>Si todas las ramas siempre van hacia la izquierda, el sistema es estable para <b>cualquier ganancia positiva K</b>.</p>
-    `;
+    `);
   }
 
   const layout = {
@@ -891,7 +915,7 @@ function renderCompensatorPlot() {
   ];
 
   explanationTitle.textContent = `Diseño de Compensador ${compTypeSelect.value}`;
-  explanationBody.innerHTML = `
+  explanationBody.innerHTML = cleanMath(`
     <div style="background:#171728; padding:8px; border-radius:6px; margin-bottom:8px;">
       <div><b>Márgenes Originales:</b> MF = ${res.baseMargins.PM ? res.baseMargins.PM.toFixed(1) + '°' : 'Infinito'}</div>
       <div><b>Márgenes Compensados:</b> MF = <b style="color:#00e5ff">${res.compMargins.PM ? res.compMargins.PM.toFixed(1) + '°' : 'Infinito'}</b></div>
@@ -900,7 +924,7 @@ function renderCompensatorPlot() {
       ${res.explanation.map(exp => `<p>• ${exp}</p>`).join('')}
     </div>
     <p style="color:#a78bfa; font-size:11px; margin-top:6px;">💡 Puedes ir a la pestaña <b>Temporal</b> para comparar la respuesta al escalón antes y después.</p>
-  `;
+  `);
 
   const layout = {
     ...darkLayoutCommon,
@@ -1000,7 +1024,7 @@ function renderStepPlot() {
       </div>
     `;
   }
-  explanationBody.innerHTML = bodyHtml;
+  explanationBody.innerHTML = cleanMath(bodyHtml);
 
   const layout = {
     ...darkLayoutCommon,
@@ -1037,14 +1061,6 @@ btnFocusCrit.addEventListener('click', () => {
     'yaxis.range': [-1.6, 1.6]
   });
 });
-// Función auxiliar para renderizar KaTeX seguro
-function renderTex(tex, display = false) {
-  try {
-    return katex.renderToString(tex, { displayMode: display, throwOnError: false });
-  } catch (e) {
-    return `<code>${tex}</code>`;
-  }
-}
 
 // Generador de la solución matemática completa paso a paso
 function populateFullSolutionModal() {
@@ -1073,8 +1089,8 @@ function populateFullSolutionModal() {
         ${renderTex(`G(s) = ${state.tfStr}`, true)}
       </div>
 
-      <p><b>A. Polos de Lazo Abierto ($D(s) = 0$):</b></p>
-      <p>Valores de $s$ que anulan el denominador y determinan los modos naturales:</p>
+      <p><b>A. Polos de Lazo Abierto (D(s) = 0):</b></p>
+      <p>Valores de s que anulan el denominador y determinan los modos naturales:</p>
       <div class="sol-formula-box">
         ${poles.map((p, i) => {
           let tipo = "Polo real simple";
@@ -1084,8 +1100,8 @@ function populateFullSolutionModal() {
         }).join('')}
       </div>
 
-      <p><b>B. Ceros de Lazo Abierto ($N(s) = 0$):</b></p>
-      <p>Valores de $s$ que anulan la salida del sistema:</p>
+      <p><b>B. Ceros de Lazo Abierto (N(s) = 0):</b></p>
+      <p>Valores de s que anulan la salida del sistema:</p>
       <div class="sol-formula-box">
         ${zeros.length > 0 ? zeros.map((z, i) => `<div>• ${renderTex(`z_{${i+1}} = ${z.re.toFixed(3)}${z.im >= 0 ? '+' : ''}${z.im.toFixed(3)}j`)}</div>`).join('') : '<i>Ninguno (el numerador es una ganancia constante).</i>'}
       </div>
@@ -1094,16 +1110,16 @@ function populateFullSolutionModal() {
     <!-- 2. Conversión a la Forma Canónica de Bode Paso a Paso -->
     <div class="sol-section">
       <h3>📊 2. Conversión a la Forma Canónica de Bode (Paso a Paso)</h3>
-      <p>Para construir el diagrama de Bode, se expresa cada factor en la forma de <b>constante de tiempo unitaria</b> $(1 + s\tau)$ o $(1 + s/\omega_c)$:</p>
+      <p>Para construir el diagrama de Bode, se expresa cada factor en la forma de <b>constante de tiempo unitaria</b> (1 + s·τ) o (1 + s/ω<sub>c</sub>):</p>
       
       <div style="background:#11111e; padding:8px 12px; border-radius:6px; margin:6px 0;">
         <p><b>Paso A: Extracción de términos constantes</b></p>
-        ${realP.map(wc => `<p style="margin:4px 0;">• $(s + ${wc.toFixed(2)}) = ${wc.toFixed(2)} \\cdot \\left(1 + \\frac{s}{${wc.toFixed(2)}}\\right) = ${wc.toFixed(2)}(1 + ${(1/wc).toFixed(3)}s)$</p>`).join('')}
-        ${realZ.map(wc => `<p style="margin:4px 0;">• $(s + ${wc.toFixed(2)}) = ${wc.toFixed(2)} \\cdot \\left(1 + \\frac{s}{${wc.toFixed(2)}}\\right) = ${wc.toFixed(2)}(1 + ${(1/wc).toFixed(3)}s)$</p>`).join('')}
+        ${realP.map(wc => `<p style="margin:4px 0;">• Factor <b>(s + ${wc.toFixed(2)}) = ${wc.toFixed(2)} · (1 + s/${wc.toFixed(2)}) = ${wc.toFixed(2)}(1 + ${(1/wc).toFixed(3)}s)</b></p>`).join('')}
+        ${realZ.map(wc => `<p style="margin:4px 0;">• Factor <b>(s + ${wc.toFixed(2)}) = ${wc.toFixed(2)} · (1 + s/${wc.toFixed(2)}) = ${wc.toFixed(2)}(1 + ${(1/wc).toFixed(3)}s)</b></p>`).join('')}
       </div>
 
       <div style="background:#11111e; padding:8px 12px; border-radius:6px; margin:6px 0;">
-        <p><b>Paso B: Cálculo formal de la Ganancia de Bode ($K_{Bode}$)</b></p>
+        <p><b>Paso B: Cálculo formal de la Ganancia de Bode (K<sub>Bode</sub>)</b></p>
         <p>Dividimos el término constante del numerador entre las constantes extraídas:</p>
         <div style="margin:6px 0; text-align:center;">
           ${renderTex(`K_{Bode} = \\lim_{s \\to 0} s^{${originP - originZ}} G(s) = ${kbode.toFixed(3)}`, true)}
@@ -1111,7 +1127,7 @@ function populateFullSolutionModal() {
         <div style="margin:6px 0; text-align:center;">
           ${renderTex(`K_{dB} = 20\\log_{10}(K_{Bode}) = 20\\log_{10}(${kbode.toFixed(3)}) = ${kbodeDb.toFixed(2)}\\text{ dB}`, true)}
         </div>
-        <p style="color:#a78bfa; font-size:11px;">En $\\omega = 1\\text{ rad/s}$, la prolongación de la asíntota inicial de baja frecuencia pasa exactamente por <b>${kbodeDb.toFixed(2)} dB</b>.</p>
+        <p style="color:#a78bfa; font-size:11px;">En <b>ω = 1 rad/s</b>, la prolongación de la asíntota inicial de baja frecuencia pasa exactamente por <b>${kbodeDb.toFixed(2)} dB</b>.</p>
       </div>
 
       <p><b>Factores Canónicos Normalizados:</b></p>
@@ -1140,7 +1156,7 @@ function populateFullSolutionModal() {
     <!-- 3. Trazado Asintótico por Intervalos -->
     <div class="sol-section">
       <h3>📈 3. Tabla de Pendientes por Intervalos de Frecuencia</h3>
-      <p>La curva asintótica de magnitud se construye acumulando algebraicamente las pendientes al cruzar cada frecuencia de corte $\\omega_c$:</p>
+      <p>La curva asintótica de magnitud se construye acumulando algebraicamente las pendientes al cruzar cada frecuencia de corte <b>ω<sub>c</sub></b>:</p>
       <table class="sol-table">
         <thead>
           <tr>
@@ -1166,26 +1182,26 @@ function populateFullSolutionModal() {
       <h3>🎯 4. Frecuencias de Cruce y Márgenes de Estabilidad</h3>
       
       <div style="background:#11111e; padding:8px 12px; border-radius:6px; margin-bottom:8px;">
-        <p><b>A. Cruce de Ganancia ($\omega_{cg}$) y Margen de Fase (MF):</b></p>
-        <p>Se calcula la frecuencia donde la magnitud real es $0\\text{ dB}$ ($|G(j\\omega)| = 1$):</p>
+        <p><b>A. Cruce de Ganancia (ω<sub>cg</sub>) y Margen de Fase (MF):</b></p>
+        <p>Se calcula la frecuencia donde la magnitud real es <b>0 dB</b> (|G(jω)| = 1):</p>
         <div style="text-align:center; margin:4px 0;">
-          ${renderTex(`|G(j\\omega_{cg})| = 1 \\quad \\Longrightarrow \\quad \\omega_{cg} \\approx ${margins.w_gc ? margins.w_gc.toFixed(3) : '\\infty'}\\text{ rad/s}`)}
+          ${renderTex(`|G(j\\omega_{cg})| = 1 \\quad \\Longrightarrow \\quad \\omega_{cg} \\approx ${margins.w_gc ? margins.w_gc.toFixed(3) : '\\infty'}\\text{ rad/s}`, true)}
         </div>
         <p>Evaluamos la fase en esa frecuencia:</p>
         <div style="text-align:center; margin:4px 0;">
-          ${renderTex(`MF = 180^\\circ + \\angle G(j\\omega_{cg}) = ${margins.PM !== null ? margins.PM.toFixed(2) : '\\infty'}^\\circ`)}
+          ${renderTex(`MF = 180^\\circ + \\angle G(j\\omega_{cg}) = ${margins.PM !== null ? margins.PM.toFixed(2) : '\\infty'}^\\circ`, true)}
         </div>
       </div>
 
       <div style="background:#11111e; padding:8px 12px; border-radius:6px; margin-bottom:8px;">
-        <p><b>B. Cruce de Fase ($\omega_{cp}$) y Margen de Ganancia (MG):</b></p>
-        <p>Se calcula la frecuencia donde la fase real cruza $-180^\\circ$:</p>
+        <p><b>B. Cruce de Fase (ω<sub>cp</sub>) y Margen de Ganancia (MG):</b></p>
+        <p>Se calcula la frecuencia donde la fase real cruza <b>-180°</b>:</p>
         <div style="text-align:center; margin:4px 0;">
-          ${renderTex(`\\angle G(j\\omega_{cp}) = -180^\\circ \\quad \\Longrightarrow \\quad \\omega_{cp} \\approx ${margins.w_pc ? margins.w_pc.toFixed(3) : '\\infty'}\\text{ rad/s}`)}
+          ${renderTex(`\\angle G(j\\omega_{cp}) = -180^\\circ \\quad \\Longrightarrow \\quad \\omega_{cp} \\approx ${margins.w_pc ? margins.w_pc.toFixed(3) : '\\infty'}\\text{ rad/s}`, true)}
         </div>
         <p>Evaluamos la magnitud atenuada en decibelios:</p>
         <div style="text-align:center; margin:4px 0;">
-          ${renderTex(`MG = -20\\log_{10}|G(j\\omega_{cp})| = ${margins.GM !== null ? margins.GM.toFixed(2) : '\\infty'}\\text{ dB}`)}
+          ${renderTex(`MG = -20\\log_{10}|G(j\\omega_{cp})| = ${margins.GM !== null ? margins.GM.toFixed(2) : '\\infty'}\\text{ dB}`, true)}
         </div>
       </div>
 
@@ -1202,8 +1218,8 @@ function populateFullSolutionModal() {
       <div class="sol-formula-box" style="text-align:center;">
         ${renderTex('Z = N + P', true)}
       </div>
-      <p>• <b>P (Polos en semiplano derecho $Re > 0$):</b> ${poles.filter(p => p.re > 1e-5).length}</p>
-      <p>• <b>N (Rodeos horarios netos al punto crítico $-1+j0$):</b> 0</p>
+      <p>• <b>P (Polos en semiplano derecho Re > 0):</b> ${poles.filter(p => p.re > 1e-5).length}</p>
+      <p>• <b>N (Rodeos horarios netos al punto crítico -1+j0):</b> 0</p>
       <p>• <b>Z (Polos inestables de lazo cerrado):</b> <b style="color:${poles.filter(p => p.re > 1e-5).length === 0 ? '#4ade80' : '#f87171'}">${poles.filter(p => p.re > 1e-5).length}</b></p>
       <p><b>Conclusión:</b> ${poles.filter(p => p.re > 1e-5).length === 0 ? '<span class="badge badge-success">ESTABLE</span> No existen raíces de lazo cerrado en el semiplano derecho.' : '<span class="badge badge-danger">INESTABLE</span> Existen raíces en el semiplano derecho.'}</p>
     </div>
@@ -1219,8 +1235,8 @@ function populateFullSolutionModal() {
         const sumZ = zeros.reduce((a, b) => a + b.re, 0);
         const sigma = asymp > 0 ? (sumP - sumZ) / asymp : 0;
         return `
-          <p>• Ramas totales ($n$ polos): <b>${n}</b></p>
-          <p>• Ramas que van al infinito ($n - m$): <b>${asymp}</b></p>
+          <p>• Ramas totales (<b>n = ${n}</b> polos)</p>
+          <p>• Ramas hacia el infinito (<b>n - m = ${asymp}</b> asíntotas)</p>
           <div class="sol-formula-box">
             ${renderTex(`\\sigma_a = \\frac{\\sum p_i - \\sum z_i}{n - m} = \\frac{(${sumP.toFixed(2)}) - (${sumZ.toFixed(2)})}{${asymp}} = ${sigma.toFixed(3)}`)}
           </div>
@@ -1267,22 +1283,22 @@ function populateFullSolutionModal() {
           </thead>
           <tbody>
             <tr>
-              <td>Tiempo de Subida ($t_r$)</td>
+              <td>Tiempo de Subida (t<sub>r</sub>)</td>
               <td>${mo.tr ? mo.tr.toFixed(3) + 's' : '—'}</td>
               <td>${mc && mc.tr ? mc.tr.toFixed(3) + 's' : '—'}</td>
             </tr>
             <tr>
-              <td>Tiempo de Asentamiento ($t_s$ 2%)</td>
+              <td>Tiempo de Asentamiento (t<sub>s</sub> 2%)</td>
               <td>${mo.ts ? mo.ts.toFixed(3) + 's' : '—'}</td>
               <td>${mc && mc.ts ? mc.ts.toFixed(3) + 's' : '—'}</td>
             </tr>
             <tr>
-              <td>Sobreimpulso Máximo ($M_p\\%$)</td>
+              <td>Sobreimpulso Máximo (M<sub>p</sub> %)</td>
               <td>${mo.mpPercent ? mo.mpPercent.toFixed(1) + '%' : '0%'}</td>
               <td>${mc && mc.mpPercent ? mc.mpPercent.toFixed(1) + '%' : '0%'}</td>
             </tr>
             <tr>
-              <td>Error de Régimen ($e_{ss}$)</td>
+              <td>Error de Régimen (e<sub>ss</sub>)</td>
               <td>${mo.ess ? mo.ess.toFixed(3) : '0'}</td>
               <td>${mc && mc.ess ? mc.ess.toFixed(3) : '0'}</td>
             </tr>
@@ -1292,7 +1308,7 @@ function populateFullSolutionModal() {
     `;
   }
 
-  solutionModalContent.innerHTML = html;
+  solutionModalContent.innerHTML = cleanMath(html);
 }
 
 // Alternar Modo Mover con el dedo (Pan)
