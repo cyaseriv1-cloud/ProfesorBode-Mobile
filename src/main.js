@@ -153,8 +153,8 @@ function renderCurrentTab() {
     stepControls.classList.remove('hidden');
   }
 
-  // Ajustar altura para Bode (dos subplots apilados)
-  if (state.currentTab === 'bode') {
+  // Ajustar altura para Bode y Compensador (dos subplots apilados)
+  if (state.currentTab === 'bode' || state.currentTab === 'compensator') {
     plotContainer.classList.add('bode-plot');
   } else {
     plotContainer.classList.remove('bode-plot');
@@ -833,24 +833,60 @@ function renderCompensatorPlot() {
   if (!state.compResult) return;
 
   const res = state.compResult;
+  const wMin = state.wList[0];
+  const wMax = state.wList[state.wList.length - 1];
+
   const traces = [
+    // Subplot 1: Magnitud (dB)
+    {
+      x: [wMin, wMax],
+      y: [0, 0],
+      xaxis: 'x',
+      yaxis: 'y',
+      name: '0 dB',
+      line: { color: '#ffffff', width: 0.9, dash: 'dot' }
+    },
     {
       x: state.wList,
       y: res.baseResp.mag,
-      name: 'Original G(s)',
+      xaxis: 'x',
+      yaxis: 'y',
+      name: 'Mag Original G(s)',
       line: { color: '#94a3b8', dash: 'dash', width: 1.8 }
     },
     {
       x: state.wList,
       y: res.compResp.mag,
-      name: 'Compensado G·C(s)',
+      xaxis: 'x',
+      yaxis: 'y',
+      name: 'Mag Compensado G·C(s)',
       line: { color: '#00e5ff', width: 2.5 }
     },
+
+    // Subplot 2: Fase (grados)
     {
-      x: [state.wList[0], state.wList[state.wList.length - 1]],
-      y: [0, 0],
-      name: '0 dB',
-      line: { color: '#ffffff', width: 0.8, dash: 'dot' }
+      x: [wMin, wMax],
+      y: [-180, -180],
+      xaxis: 'x2',
+      yaxis: 'y2',
+      name: '-180°',
+      line: { color: '#ef4444', dash: 'dash', width: 1.0 }
+    },
+    {
+      x: state.wList,
+      y: res.baseResp.phase,
+      xaxis: 'x2',
+      yaxis: 'y2',
+      name: 'Fase Original G(s)',
+      line: { color: '#f59e0b', dash: 'dash', width: 1.8 }
+    },
+    {
+      x: state.wList,
+      y: res.compResp.phase,
+      xaxis: 'x2',
+      yaxis: 'y2',
+      name: 'Fase Compensado G·C(s)',
+      line: { color: '#ffd700', width: 2.2 }
     }
   ];
 
@@ -868,8 +904,43 @@ function renderCompensatorPlot() {
 
   const layout = {
     ...darkLayoutCommon,
-    xaxis: { type: 'log', title: 'Frecuencia ω (rad/s)', gridcolor: '#33334d' },
-    yaxis: { title: 'Magnitud (dB)', gridcolor: '#33334d' }
+    dragmode: currentDragMode,
+    margin: { t: 15, b: 35, l: 45, r: 15 },
+    xaxis: {
+      type: 'log',
+      anchor: 'y',
+      showticklabels: false,
+      gridcolor: '#3d3d58',
+      gridwidth: 1,
+      minor: { showgrid: true, gridcolor: '#26263a', gridwidth: 0.8 }
+    },
+    yaxis: {
+      domain: [0.55, 1.0],
+      title: 'Magnitud (dB)',
+      gridcolor: '#38384f',
+      gridwidth: 1,
+      zeroline: true,
+      zerolinecolor: '#ffffff',
+      zerolinewidth: 1
+    },
+    xaxis2: {
+      type: 'log',
+      anchor: 'y2',
+      title: 'Frecuencia ω (rad/s)',
+      gridcolor: '#3d3d58',
+      gridwidth: 1,
+      matches: 'x',
+      minor: { showgrid: true, gridcolor: '#26263a', gridwidth: 0.8 }
+    },
+    yaxis2: {
+      domain: [0.0, 0.45],
+      title: 'Fase (grados)',
+      gridcolor: '#38384f',
+      gridwidth: 1,
+      zeroline: true,
+      zerolinecolor: '#ffffff',
+      zerolinewidth: 1
+    }
   };
 
   Plotly.newPlot(plotContainer, traces, layout, plotlyConfig);

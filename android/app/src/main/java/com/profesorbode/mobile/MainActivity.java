@@ -1,4 +1,4 @@
-package com.profesorbode.app;
+﻿package com.profesorbode.mobile;
 
 import com.getcapacitor.BridgeActivity;
 
