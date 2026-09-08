@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+
+# Android build outputs
+android/app/build/
+android/.gradle/
+android/build/
+android/captures/
+.gradle/
+local.properties

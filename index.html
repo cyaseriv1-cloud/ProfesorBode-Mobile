@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>ProfesorBode Mobile</title>
+  <link rel="stylesheet" href="./src/style.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+</head>
+<body class="bg-dark text-light">
+  <div id="app">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo-area">
+        <span class="logo-icon">📡</span>
+        <div class="logo-text">
+          <h1>ProfesorBode</h1>
+          <span class="subtitle">Sistemas de Control</span>
+        </div>
+      </div>
+      <button id="btnAbout" class="btn-icon" title="Acerca de">ℹ️</button>
+    </header>
+
+    <!-- Formula Bar & Input -->
+    <section class="input-section">
+      <div class="input-group">
+        <label for="tfInput">Función GH(s):</label>
+        <div class="input-row">
+          <input type="text" id="tfInput" value="10/(s*(s+2)*(s+4))" placeholder="Ej: 10/(s*(s+2)*(s+4))" />
+          <button id="btnAnalyze" class="btn-primary">🚀 Analizar</button>
+        </div>
+      </div>
+
+      <!-- Quick Examples & Keyboard Toggle -->
+      <div class="action-row">
+        <select id="exampleSelect" class="select-dropdown">
+          <option value="" disabled selected>📋 Cargar Ejemplo...</option>
+          <option value="1/(s+1)">1. Primer Orden: 1/(s+1)</option>
+          <option value="10/(s^2+2*s+10)">2. Segundo Orden: 10/(s²+2s+10)</option>
+          <option value="10/(s*(s+2)*(s+4))">3. Tercer Orden: 10/(s(s+2)(s+4))</option>
+          <option value="1/(s-1)">4. Inestable: 1/(s-1)</option>
+          <option value="(s-2)/((s+1)*(s+3))">5. Cero en RHP: (s-2)/((s+1)(s+3))</option>
+          <option value="20/((s^2+s+25)*(s+2))">6. Complejos: 20/((s²+s+25)(s+2))</option>
+          <option value="10/(s^2*(s+5))">7. Integrador doble: 10/(s²(s+5))</option>
+        </select>
+        <button id="btnToggleKeypad" class="btn-secondary">⌨️ Teclado</button>
+      </div>
+
+      <!-- Virtual Keyboard -->
+      <div id="virtualKeypad" class="keypad-container hidden">
+        <div class="keypad-grid">
+          <button class="key-btn key-action" data-key="s">s</button>
+          <button class="key-btn key-action" data-key="j">j</button>
+          <button class="key-btn key-action" data-key="pi">π</button>
+          <button class="key-btn key-action" data-key="^">^</button>
+          <button class="key-btn key-special" data-key="clear">Limpiar</button>
+
+          <button class="key-btn" data-key="(">(</button>
+          <button class="key-btn" data-key=")">)</button>
+          <button class="key-btn" data-key="+">+</button>
+          <button class="key-btn" data-key="-">-</button>
+          <button class="key-btn" data-key="*">*</button>
+
+          <button class="key-btn" data-key="7">7</button>
+          <button class="key-btn" data-key="8">8</button>
+          <button class="key-btn" data-key="9">9</button>
+          <button class="key-btn" data-key="/">/</button>
+          <button class="key-btn key-danger" data-key="back">Borrar</button>
+
+          <button class="key-btn" data-key="4">4</button>
+          <button class="key-btn" data-key="5">5</button>
+          <button class="key-btn" data-key="6">6</button>
+          <button class="key-btn key-action" data-key="1/s">1/s</button>
+          <button class="key-btn key-action" data-key="1/s^2">1/s²</button>
+
+          <button class="key-btn" data-key="1">1</button>
+          <button class="key-btn" data-key="2">2</button>
+          <button class="key-btn" data-key="3">3</button>
+          <button class="key-btn" data-key=".">.</button>
+          <button class="key-btn" data-key="0">0</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Chart Area -->
+    <main class="chart-section">
+      <div id="plotContainer" class="plot-box"></div>
+
+      <!-- Step by Step Controls (Bode / Nyquist / Locus) -->
+      <div id="stepControls" class="step-controls">
+        <button id="btnPrevStep" class="btn-step" disabled>&lt;&lt; Anterior</button>
+        <span id="stepCounter" class="step-indicator">Paso 0 de 4</span>
+        <button id="btnNextStep" class="btn-step">Siguiente &gt;&gt;</button>
+      </div>
+
+      <!-- Explanation Card -->
+      <div id="explanationCard" class="explanation-card">
+        <div id="explanationTitle" class="card-title">Análisis del Sistema</div>
+        <div id="explanationBody" class="card-body">
+          Ingresa una función de transferencia y presiona <b>Analizar</b>.
+        </div>
+      </div>
+
+      <!-- Compensator Drawer Settings (Active only on Compensators tab) -->
+      <div id="compSettingsPanel" class="comp-panel hidden">
+        <div class="comp-row">
+          <label>Tipo:</label>
+          <select id="compTypeSelect" class="select-dropdown-sm">
+            <option value="Lead">Adelanto (Lead)</option>
+            <option value="Lag">Retraso (Lag)</option>
+            <option value="Lead-Lag">Adelanto-Retraso (Lead-Lag)</option>
+          </select>
+        </div>
+        <div class="comp-row">
+          <label>MF Deseado (°):</label>
+          <input type="number" id="inputDesiredPM" value="45" min="10" max="85" />
+        </div>
+        <div class="comp-row">
+          <label>Kv Deseado:</label>
+          <input type="number" id="inputDesiredKv" placeholder="Opcional" />
+        </div>
+        <button id="btnCalculateComp" class="btn-primary btn-full">⚡ Diseñar Compensador</button>
+      </div>
+    </main>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="bottom-nav">
+      <button class="nav-item active" data-tab="bode">
+        <span class="nav-icon">📈</span>
+        <span class="nav-label">Bode</span>
+      </button>
+      <button class="nav-item" data-tab="nyquist">
+        <span class="nav-icon">🌀</span>
+        <span class="nav-label">Nyquist</span>
+      </button>
+      <button class="nav-item" data-tab="locus">
+        <span class="nav-icon">🎯</span>
+        <span class="nav-label">L. Raíces</span>
+      </button>
+      <button class="nav-item" data-tab="compensator">
+        <span class="nav-icon">⚙️</span>
+        <span class="nav-label">Compensador</span>
+      </button>
+      <button class="nav-item" data-tab="step">
+        <span class="nav-icon">⏱️</span>
+        <span class="nav-label">Temporal</span>
+      </button>
+    </nav>
+
+    <!-- Modal About -->
+    <div id="modalAbout" class="modal-backdrop hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>📡 ProfesorBode Mobile</h2>
+          <button id="btnCloseAbout" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="tagline">Herramienta Integral de Análisis y Control Clásico para Android</p>
+          <hr />
+          <ul class="features-list">
+            <li><b>📈 Diagrama de Bode:</b> Curvas exactas y asintóticas con cálculo de MF y MG.</li>
+            <li><b>🌀 Diagrama de Nyquist:</b> Trazo polar con flechas direccionales y criterio de estabilidad Z = N + P.</li>
+            <li><b>🎯 Lugar de las Raíces:</b> Evolución de polos con zoom táctil.</li>
+            <li><b>⚙️ Compensadores:</b> Diseño analítico de Adelanto, Retraso y Lead-Lag con ajuste de Kv.</li>
+            <li><b>⏱️ Respuesta Temporal:</b> Simulación en lazo cerrado ante escalón con Tr, Ts, Mp y Ess antes y después de compensar.</li>
+          </ul>
+          <hr />
+          <div class="credits">
+            <p>🎓 <b>Autor:</b> YCH</p>
+            <p>⚡ <b>Tecnología:</b> Powered by Antigravity AI · Google DeepMind</p>
+            <p class="contact">📞 +51 906 147 508 &nbsp;|&nbsp; ✉️ cyaseriv1@gmail.com</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btnDismissAbout" class="btn-primary">Entendido</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
