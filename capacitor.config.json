@@ -1,5 +1,5 @@
 {
-  "appId": "com.profesorbode.app",
+  "appId": "com.profesorbode.mobile",
   "appName": "Profesor Bode",
   "webDir": "dist",
   "bundledWebRuntime": false,

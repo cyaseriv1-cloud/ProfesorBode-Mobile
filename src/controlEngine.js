@@ -583,24 +583,25 @@ export function getBodeComponents(num, den, wList) {
     realPoles.sort((a, b) => a - b);
     realZeros.sort((a, b) => a - b);
 
-    // Ganancia en forma estándar de Bode K_bode = K_raw * prod(w_zeros) / prod(w_poles)
-    let prodZ = realZeros.reduce((acc, v) => acc * v, 1);
-    let prodP = realPoles.reduce((acc, v) => acc * v, 1);
-    let kRaw = (num[num.length - 1 - originZeros] || 1) / (den[den.length - 1 - originPoles] || 1);
-    let kBode = kRaw;
-    if (prodP > 0) kBode = kRaw / prodP;
+    // Ganancia en forma estándar de Bode: K_bode = lim_{s->0} s^(originPoles - originZeros) * G(s)
+    const numConst = num[num.length - 1 - originZeros] || 1;
+    const denConst = den[den.length - 1 - originPoles] || 1;
+    const kBode = numConst / denConst;
+    const k_db = 20 * Math.log10(Math.max(Math.abs(kBode), 1e-8));
 
     const components = [];
 
     // 1. Ganancia
-    const gainMag = wList.map(() => 20 * Math.log10(Math.max(Math.abs(kBode), 1e-8)));
+    const gainMag = wList.map(() => k_db);
     const gainPhase = wList.map(() => kBode >= 0 ? 0 : -180);
     components.push({
         type: 'gain',
         name: `Ganancia K = ${kBode.toFixed(2)}`,
-        desc: `Magnitud plana de ${gainMag[0].toFixed(1)} dB y desfase constante de ${gainPhase[0]}°.`,
+        desc: `Ganancia estática K = ${kBode.toFixed(2)} (${k_db.toFixed(2)} dB). Aporta una magnitud plana en todo el gráfico y desfase de ${gainPhase[0]}°.`,
         mag: gainMag,
-        phase: gainPhase
+        phase: gainPhase,
+        slope: 0,
+        phaseShift: gainPhase[0]
     });
 
     // 2. Polo en el origen
@@ -610,9 +611,11 @@ export function getBodeComponents(num, den, wList) {
         components.push({
             type: 'origin_pole',
             name: originPoles === 1 ? 'Polo en el origen (1/s)' : `Polo en el origen múltiple (1/s^${originPoles})`,
-            desc: `Pendiente de -${20 * originPoles} dB/década que cruza 0 dB en ω = 1 rad/s y fase fija de -${90 * originPoles}°.`,
+            desc: `Integrador puro: pendiente de -${20 * originPoles} dB/década que cruza 0 dB en ω = 1 rad/s y desfase constante de -${90 * originPoles}°.`,
             mag: pMag,
-            phase: pPhase
+            phase: pPhase,
+            slope: -20 * originPoles,
+            phaseShift: -90 * originPoles
         });
     }
 
@@ -623,9 +626,11 @@ export function getBodeComponents(num, den, wList) {
         components.push({
             type: 'origin_zero',
             name: originZeros === 1 ? 'Cero en el origen (s)' : `Cero en el origen (s^${originZeros})`,
-            desc: `Pendiente de +${20 * originZeros} dB/década que cruza 0 dB en ω = 1 rad/s y fase fija de +${90 * originZeros}°.`,
+            desc: `Derivador puro: pendiente de +${20 * originZeros} dB/década que cruza 0 dB en ω = 1 rad/s y adelanto constante de +${90 * originZeros}°.`,
             mag: zMag,
-            phase: zPhase
+            phase: zPhase,
+            slope: 20 * originZeros,
+            phaseShift: 90 * originZeros
         });
     }
 
@@ -640,10 +645,12 @@ export function getBodeComponents(num, den, wList) {
         components.push({
             type: 'real_pole',
             name: `Polo simple en ω = ${wc.toFixed(2)} rad/s`,
-            desc: `Plano en 0 dB hasta la frecuencia de corte ω = ${wc.toFixed(2)} rad/s, luego cae a razón de -20 dB/década. La fase cae de 0° a -90° (pasando por -45° en ω_c).`,
+            desc: `Filtro pasa-bajos con quiebre en ω_c = ${wc.toFixed(2)} rad/s. Plano en 0 dB para ω < ${wc.toFixed(2)}, luego cae a -20 dB/década. Fase: 0° (baja frec) pasando por -45° en ω_c hasta -90° (alta frec).`,
             mag: pMag,
             phase: pPhase,
-            wc
+            wc,
+            slope: -20,
+            phaseShift: -90
         });
     });
 
@@ -658,11 +665,67 @@ export function getBodeComponents(num, den, wList) {
         components.push({
             type: 'real_zero',
             name: `Cero simple en ω = ${wc.toFixed(2)} rad/s`,
-            desc: `Plano en 0 dB hasta ω = ${wc.toFixed(2)} rad/s, luego sube a +20 dB/década. La fase sube de 0° a +90° (pasando por +45° en ω_c).`,
+            desc: `Filtro pasa-altos con quiebre en ω_c = ${wc.toFixed(2)} rad/s. Plano en 0 dB para ω < ${wc.toFixed(2)}, luego sube a +20 dB/década. Fase: 0° pasando por +45° en ω_c hasta +90°.`,
             mag: zMag,
             phase: zPhase,
-            wc
+            wc,
+            slope: 20,
+            phaseShift: 90
         });
+    });
+
+    // 6. Polos complejos conjugados
+    const uniqueComplexPoles = [];
+    for (let i = 0; i < complexPoles.length; i += 2) {
+        const cp = complexPoles[i];
+        const wn = Math.hypot(cp.re, cp.im);
+        const zeta = wn > 0 ? -cp.re / wn : 0;
+        uniqueComplexPoles.push({ wn, zeta });
+        const pMag = wList.map(w => w <= wn ? 0 : -40 * Math.log10(w / wn));
+        const pPhase = wList.map(w => {
+            if (w <= wn / 10) return 0;
+            if (w >= 10 * wn) return -180;
+            return -90 * (1 + Math.log10(w / wn));
+        });
+        components.push({
+            type: 'complex_pole',
+            name: `Polos complejos en ωn = ${wn.toFixed(2)} (ζ = ${zeta.toFixed(2)})`,
+            desc: `Par oscilatorio con ωn = ${wn.toFixed(2)} rad/s y amortiguamiento ζ = ${zeta.toFixed(2)}. Cae a -40 dB/década para ω > ωn. Desfase de 0° a -180° (-90° en ωn).`,
+            mag: pMag,
+            phase: pPhase,
+            wc: wn,
+            slope: -40,
+            phaseShift: -180
+        });
+    }
+
+    // Cálculo de pendientes por tramos de frecuencia
+    let runningSlope = (originZeros - originPoles) * 20;
+    const allEvents = [];
+    realPoles.forEach(wc => allEvents.push({ wc, delta: -20, desc: `Polo en ω = ${wc.toFixed(2)} rad/s (-20 dB/dec)` }));
+    realZeros.forEach(wc => allEvents.push({ wc, delta: 20, desc: `Cero en ω = ${wc.toFixed(2)} rad/s (+20 dB/dec)` }));
+    uniqueComplexPoles.forEach(cp => allEvents.push({ wc: cp.wn, delta: -40, desc: `Polos complejos en ωn = ${cp.wn.toFixed(2)} rad/s (-40 dB/dec)` }));
+    allEvents.sort((a, b) => a.wc - b.wc);
+
+    const intervals = [];
+    let prevW = 0;
+    for (let ev of allEvents) {
+        intervals.push({
+            fromW: prevW,
+            toW: ev.wc,
+            slope: runningSlope,
+            label: prevW === 0 ? `ω < ${ev.wc.toFixed(2)} rad/s` : `${prevW.toFixed(2)} ≤ ω < ${ev.wc.toFixed(2)} rad/s`,
+            activeFactor: ev.desc
+        });
+        runningSlope += ev.delta;
+        prevW = ev.wc;
+    }
+    intervals.push({
+        fromW: prevW,
+        toW: Infinity,
+        slope: runningSlope,
+        label: prevW === 0 ? `Todas las frecuencias` : `ω ≥ ${prevW.toFixed(2)} rad/s`,
+        activeFactor: 'Alta frecuencia'
     });
 
     // Curva asintótica total sumando componentes
@@ -680,10 +743,14 @@ export function getBodeComponents(num, den, wList) {
         totalAsympMag,
         totalAsympPhase,
         kBode,
+        k_bode: kBode,
+        k_db,
         originPoles,
         originZeros,
         realPoles,
-        realZeros
+        realZeros,
+        complexPoles: uniqueComplexPoles,
+        intervals
     };
 }
 

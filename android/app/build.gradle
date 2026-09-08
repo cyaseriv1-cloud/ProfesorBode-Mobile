@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace "com.profesorbode.app"
+    namespace "com.profesorbode.mobile"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.profesorbode.app"
+        applicationId "com.profesorbode.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         def runNumber = System.getenv("GITHUB_RUN_NUMBER") ?: "10"
