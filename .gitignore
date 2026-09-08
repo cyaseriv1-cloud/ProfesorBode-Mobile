@@ -2,6 +2,8 @@ node_modules/
 dist/
 .DS_Store
 *.log
+*.apk
+
 
 # Android build outputs
 android/app/build/

@@ -84,7 +84,18 @@
 
     <!-- Main Chart Area -->
     <main class="chart-section">
-      <div id="plotContainer" class="plot-box"></div>
+      <!-- Toolbar de Controles Avanzados -->
+      <div class="chart-toolbar">
+        <button id="btnFocusCrit" class="tool-btn special hidden" title="Centrar en Punto -1+j0">🎯 Centrar en -1</button>
+        <button id="btnZoomIn" class="tool-btn" title="Acercar">🔍+</button>
+        <button id="btnZoomOut" class="tool-btn" title="Alejar">🔍-</button>
+        <button id="btnResetView" class="tool-btn" title="Restablecer Vista">🔄 Auto</button>
+        <button id="btnFullscreen" class="tool-btn highlight" title="Modo Pantalla Completa">⛶ Pantalla Completa</button>
+      </div>
+
+      <div class="plot-wrapper">
+        <div id="plotContainer" class="plot-box"></div>
+      </div>
 
       <!-- Step by Step Controls (Bode / Nyquist / Locus) -->
       <div id="stepControls" class="step-controls">
@@ -95,7 +106,10 @@
 
       <!-- Explanation Card -->
       <div id="explanationCard" class="explanation-card">
-        <div id="explanationTitle" class="card-title">Análisis del Sistema</div>
+        <div class="card-header-row">
+          <div id="explanationTitle" class="card-title">Análisis del Sistema</div>
+          <button id="btnToggleExpand" class="btn-toggle-expand">📖 Expandir</button>
+        </div>
         <div id="explanationBody" class="card-body">
           Ingresa una función de transferencia y presiona <b>Analizar</b>.
         </div>

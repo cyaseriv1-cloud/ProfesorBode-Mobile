@@ -218,14 +218,77 @@ body {
   gap: 8px;
 }
 
+.plot-wrapper {
+  position: relative;
+  width: 100%;
+}
+
 .plot-box {
   width: 100%;
-  height: 270px;
-  min-height: 270px;
+  height: 280px;
+  min-height: 280px;
   background-color: #222233;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid var(--border-color);
+}
+
+/* Floating Chart Navigation Toolbar */
+.chart-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.tool-btn {
+  background-color: #24243a;
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.tool-btn:active {
+  background-color: #3b3b5c;
+}
+
+.tool-btn.highlight {
+  background-color: #1a3a5c;
+  color: #7eb8f7;
+  border-color: #2563eb;
+}
+
+.tool-btn.special {
+  background-color: #43281c;
+  color: #ffd700;
+  border-color: #b45309;
+}
+
+/* Fullscreen Mode */
+#app.fullscreen-mode .app-header,
+#app.fullscreen-mode .input-section {
+  display: none !important;
+}
+
+#app.fullscreen-mode .chart-section {
+  padding: 4px 8px;
+}
+
+#app.fullscreen-mode .plot-box {
+  height: calc(100vh - 160px);
+  min-height: calc(100vh - 160px);
+}
+
+#app.fullscreen-mode .explanation-card {
+  max-height: 80px;
 }
 
 /* Step controls */
@@ -272,15 +335,35 @@ body {
   border: 1px solid var(--border-color);
   font-size: 12px;
   line-height: 1.45;
-  max-height: 180px;
+  max-height: 190px;
   overflow-y: auto;
+  transition: max-height 0.25s ease;
+}
+
+.explanation-card.expanded {
+  max-height: 380px;
+}
+
+.card-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
 }
 
 .card-title {
   font-size: 13px;
   font-weight: 700;
   color: var(--accent-gold);
-  margin-bottom: 6px;
+}
+
+.btn-toggle-expand {
+  background: none;
+  border: none;
+  color: #7eb8f7;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
 }
 
 .card-body p {

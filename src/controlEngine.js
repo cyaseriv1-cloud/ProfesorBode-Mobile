@@ -551,3 +551,139 @@ export function designCompensator(type, num, den, desiredPM, desiredKv = null, m
         explanation
     };
 }
+
+/**
+ * Descomposición en componentes individuales para trazado de Bode paso a paso
+ */
+export function getBodeComponents(num, den, wList) {
+    const numRoots = findRoots(num);
+    const denRoots = findRoots(den);
+
+    let originPoles = 0;
+    let originZeros = 0;
+    const realPoles = [];
+    const realZeros = [];
+    const complexPoles = [];
+    const complexZeros = [];
+
+    denRoots.forEach(r => {
+        const mag = Math.hypot(r.re, r.im);
+        if (mag < 1e-5) originPoles++;
+        else if (Math.abs(r.im) > 1e-5) complexPoles.push(r);
+        else realPoles.push(Math.abs(r.re));
+    });
+
+    numRoots.forEach(r => {
+        const mag = Math.hypot(r.re, r.im);
+        if (mag < 1e-5) originZeros++;
+        else if (Math.abs(r.im) > 1e-5) complexZeros.push(r);
+        else realZeros.push(Math.abs(r.re));
+    });
+
+    realPoles.sort((a, b) => a - b);
+    realZeros.sort((a, b) => a - b);
+
+    // Ganancia en forma estándar de Bode K_bode = K_raw * prod(w_zeros) / prod(w_poles)
+    let prodZ = realZeros.reduce((acc, v) => acc * v, 1);
+    let prodP = realPoles.reduce((acc, v) => acc * v, 1);
+    let kRaw = (num[num.length - 1 - originZeros] || 1) / (den[den.length - 1 - originPoles] || 1);
+    let kBode = kRaw;
+    if (prodP > 0) kBode = kRaw / prodP;
+
+    const components = [];
+
+    // 1. Ganancia
+    const gainMag = wList.map(() => 20 * Math.log10(Math.max(Math.abs(kBode), 1e-8)));
+    const gainPhase = wList.map(() => kBode >= 0 ? 0 : -180);
+    components.push({
+        type: 'gain',
+        name: `Ganancia K = ${kBode.toFixed(2)}`,
+        desc: `Magnitud plana de ${gainMag[0].toFixed(1)} dB y desfase constante de ${gainPhase[0]}°.`,
+        mag: gainMag,
+        phase: gainPhase
+    });
+
+    // 2. Polo en el origen
+    if (originPoles > 0) {
+        const pMag = wList.map(w => -20 * originPoles * Math.log10(w));
+        const pPhase = wList.map(() => -90 * originPoles);
+        components.push({
+            type: 'origin_pole',
+            name: originPoles === 1 ? 'Polo en el origen (1/s)' : `Polo en el origen múltiple (1/s^${originPoles})`,
+            desc: `Pendiente de -${20 * originPoles} dB/década que cruza 0 dB en ω = 1 rad/s y fase fija de -${90 * originPoles}°.`,
+            mag: pMag,
+            phase: pPhase
+        });
+    }
+
+    // 3. Cero en el origen
+    if (originZeros > 0) {
+        const zMag = wList.map(w => 20 * originZeros * Math.log10(w));
+        const zPhase = wList.map(() => 90 * originZeros);
+        components.push({
+            type: 'origin_zero',
+            name: originZeros === 1 ? 'Cero en el origen (s)' : `Cero en el origen (s^${originZeros})`,
+            desc: `Pendiente de +${20 * originZeros} dB/década que cruza 0 dB en ω = 1 rad/s y fase fija de +${90 * originZeros}°.`,
+            mag: zMag,
+            phase: zPhase
+        });
+    }
+
+    // 4. Polos simples reales
+    realPoles.forEach(wc => {
+        const pMag = wList.map(w => w <= wc ? 0 : -20 * Math.log10(w / wc));
+        const pPhase = wList.map(w => {
+            if (w <= wc / 10) return 0;
+            if (w >= 10 * wc) return -90;
+            return -45 * (1 + Math.log10(w / wc));
+        });
+        components.push({
+            type: 'real_pole',
+            name: `Polo simple en ω = ${wc.toFixed(2)} rad/s`,
+            desc: `Plano en 0 dB hasta la frecuencia de corte ω = ${wc.toFixed(2)} rad/s, luego cae a razón de -20 dB/década. La fase cae de 0° a -90° (pasando por -45° en ω_c).`,
+            mag: pMag,
+            phase: pPhase,
+            wc
+        });
+    });
+
+    // 5. Ceros simples reales
+    realZeros.forEach(wc => {
+        const zMag = wList.map(w => w <= wc ? 0 : 20 * Math.log10(w / wc));
+        const zPhase = wList.map(w => {
+            if (w <= wc / 10) return 0;
+            if (w >= 10 * wc) return 90;
+            return 45 * (1 + Math.log10(w / wc));
+        });
+        components.push({
+            type: 'real_zero',
+            name: `Cero simple en ω = ${wc.toFixed(2)} rad/s`,
+            desc: `Plano en 0 dB hasta ω = ${wc.toFixed(2)} rad/s, luego sube a +20 dB/década. La fase sube de 0° a +90° (pasando por +45° en ω_c).`,
+            mag: zMag,
+            phase: zPhase,
+            wc
+        });
+    });
+
+    // Curva asintótica total sumando componentes
+    const totalAsympMag = new Array(wList.length).fill(0);
+    const totalAsympPhase = new Array(wList.length).fill(0);
+    components.forEach(c => {
+        for (let i = 0; i < wList.length; i++) {
+            totalAsympMag[i] += c.mag[i];
+            totalAsympPhase[i] += c.phase[i];
+        }
+    });
+
+    return {
+        components,
+        totalAsympMag,
+        totalAsympPhase,
+        kBode,
+        originPoles,
+        originZeros,
+        realPoles,
+        realZeros
+    };
+}
+
