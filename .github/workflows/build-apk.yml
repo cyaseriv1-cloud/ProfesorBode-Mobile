@@ -34,9 +34,8 @@ jobs:
       - name: 5. Compilar proyecto Vite (dist/)
         run: npm run build
 
-      - name: 6. Inicializar y sincronizar Capacitor Android
+      - name: 6. Sincronizar Capacitor Android
         run: |
-          npx cap add android || true
           npx cap sync android
 
       - name: 7. Dar permisos de ejecución a Gradle

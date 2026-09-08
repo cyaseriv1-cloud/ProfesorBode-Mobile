@@ -87,10 +87,10 @@
       <!-- Toolbar de Controles Avanzados -->
       <div class="chart-toolbar">
         <button id="btnFocusCrit" class="tool-btn special hidden" title="Centrar en Punto -1+j0">🎯 Centrar en -1</button>
-        <button id="btnZoomIn" class="tool-btn" title="Acercar">🔍+</button>
-        <button id="btnZoomOut" class="tool-btn" title="Alejar">🔍-</button>
+        <button id="btnModePan" class="tool-btn highlight" title="Mover la gráfica con el dedo">🖐️ Mover</button>
+        <button id="btnModeZoom" class="tool-btn" title="Seleccionar área para zoom">🔍 Zoom</button>
         <button id="btnResetView" class="tool-btn" title="Restablecer Vista">🔄 Auto</button>
-        <button id="btnFullscreen" class="tool-btn highlight" title="Modo Pantalla Completa">⛶ Pantalla Completa</button>
+        <button id="btnFullscreen" class="tool-btn" title="Modo Pantalla Completa">⛶ Pantalla</button>
       </div>
 
       <div class="plot-wrapper">
@@ -108,7 +108,10 @@
       <div id="explanationCard" class="explanation-card">
         <div class="card-header-row">
           <div id="explanationTitle" class="card-title">Análisis del Sistema</div>
-          <button id="btnToggleExpand" class="btn-toggle-expand">📖 Expandir</button>
+          <div class="card-actions">
+            <button id="btnFullSolution" class="btn-action-sm">📑 Solución Completa</button>
+            <button id="btnToggleExpand" class="btn-toggle-expand">📖 Expandir</button>
+          </div>
         </div>
         <div id="explanationBody" class="card-body">
           Ingresa una función de transferencia y presiona <b>Analizar</b>.
@@ -187,6 +190,22 @@
         </div>
         <div class="modal-footer">
           <button id="btnDismissAbout" class="btn-primary">Entendido</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Solución Completa -->
+    <div id="modalSolution" class="modal-backdrop hidden">
+      <div class="modal-card modal-card-large">
+        <div class="modal-header">
+          <h2>📑 Solución Matemática Completa</h2>
+          <button id="btnCloseSolution" class="btn-close">&times;</button>
+        </div>
+        <div id="solutionModalContent" class="modal-body solution-scroll-body">
+          <!-- Contenido dinámico completo -->
+        </div>
+        <div class="modal-footer">
+          <button id="btnDismissSolution" class="btn-primary">Cerrar</button>
         </div>
       </div>
     </div>

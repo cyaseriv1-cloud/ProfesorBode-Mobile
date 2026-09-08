@@ -1,5 +1,7 @@
 // main.js - Lógica completa de UI interactiva, controles avanzados y explicaciones para ProfesorBode Mobile
 import Plotly from 'plotly.js-dist-min';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 import {
   parseTransferFunction,
   evaluateFreqResponse,
@@ -66,8 +68,8 @@ const btnCalculateComp = document.getElementById('btnCalculateComp');
 // Controles Avanzados de Gráfica
 const btnFullscreen = document.getElementById('btnFullscreen');
 const btnFocusCrit = document.getElementById('btnFocusCrit');
-const btnZoomIn = document.getElementById('btnZoomIn');
-const btnZoomOut = document.getElementById('btnZoomOut');
+const btnModePan = document.getElementById('btnModePan');
+const btnModeZoom = document.getElementById('btnModeZoom');
 const btnResetView = document.getElementById('btnResetView');
 
 // Modal Acerca de
@@ -77,6 +79,16 @@ const btnCloseAbout = document.getElementById('btnCloseAbout');
 const btnDismissAbout = document.getElementById('btnDismissAbout');
 const navButtons = document.querySelectorAll('.bottom-nav .nav-item');
 
+// Modal Solución Completa
+const btnFullSolution = document.getElementById('btnFullSolution');
+const modalSolution = document.getElementById('modalSolution');
+const btnCloseSolution = document.getElementById('btnCloseSolution');
+const btnDismissSolution = document.getElementById('btnDismissSolution');
+const solutionModalContent = document.getElementById('solutionModalContent');
+
+// Estado del modo de interacción en la gráfica (por defecto: 'pan' para mover con el dedo)
+let currentDragMode = 'pan';
+
 // Configuración común de Plotly para tema Dark y móvil
 const darkLayoutCommon = {
   paper_bgcolor: '#222233',
@@ -84,7 +96,8 @@ const darkLayoutCommon = {
   margin: { t: 25, b: 35, l: 45, r: 20 },
   font: { color: '#f1f5f9', size: 10 },
   showlegend: true,
-  legend: { orientation: 'h', y: 1.14, x: 0, font: { size: 9 } }
+  legend: { orientation: 'h', y: 1.14, x: 0, font: { size: 9 } },
+  dragmode: 'pan'
 };
 
 const plotlyConfig = {
@@ -744,39 +757,218 @@ btnFocusCrit.addEventListener('click', () => {
     'yaxis.range': [-1.6, 1.6]
   });
 });
-
-// Zoom In
-btnZoomIn.addEventListener('click', () => {
-  const current = plotContainer._fullLayout;
-  if (current && current.xaxis && current.yaxis) {
-    const xRange = current.xaxis.range;
-    const yRange = current.yaxis.range;
-    const xMid = (xRange[0] + xRange[1]) / 2;
-    const xSpan = (xRange[1] - xRange[0]) * 0.7;
-    const yMid = (yRange[0] + yRange[1]) / 2;
-    const ySpan = (yRange[1] - yRange[0]) * 0.7;
-    Plotly.relayout(plotContainer, {
-      'xaxis.range': [xMid - xSpan / 2, xMid + xSpan / 2],
-      'yaxis.range': [yMid - ySpan / 2, yMid + ySpan / 2]
-    });
+// Función auxiliar para renderizar KaTeX seguro
+function renderTex(tex, display = false) {
+  try {
+    return katex.renderToString(tex, { displayMode: display, throwOnError: false });
+  } catch (e) {
+    return `<code>${tex}</code>`;
   }
+}
+
+// Generador de la solución matemática completa paso a paso
+function populateFullSolutionModal() {
+  if (!state.parsedTF) return;
+
+  const num = state.parsedTF.num;
+  const den = state.parsedTF.den;
+  const poles = findRoots(den);
+  const zeros = findRoots(num);
+  const comps = state.bodeComps ? state.bodeComps.components : [];
+  const margins = state.margins;
+  const kbode = state.bodeComps ? state.bodeComps.k_bode : 1;
+  const kbodeDb = state.bodeComps ? state.bodeComps.k_db : 0;
+
+  let html = `
+    <!-- 1. Función de Transferencia Original -->
+    <div class="sol-section">
+      <h3>📐 1. Función de Transferencia Analizada</h3>
+      <p>Ecuación ingresada en el dominio de Laplace:</p>
+      <div class="sol-formula-box">
+        ${renderTex(`G(s) = ${state.tfStr}`, true)}
+      </div>
+      <p><b>Polos de lazo abierto (${poles.length}):</b></p>
+      <div class="sol-formula-box">
+        ${poles.map((p, i) => renderTex(`p_{${i+1}} = ${p.re.toFixed(3)}${p.im >= 0 ? '+' : ''}${p.im.toFixed(3)}j`)).join(' \\quad , \\quad ')}
+      </div>
+      <p><b>Ceros de lazo abierto (${zeros.length}):</b></p>
+      <div class="sol-formula-box">
+        ${zeros.length > 0 ? zeros.map((z, i) => renderTex(`z_{${i+1}} = ${z.re.toFixed(3)}${z.im >= 0 ? '+' : ''}${z.im.toFixed(3)}j`)).join(' \\quad , \\quad ') : 'Ninguno (sin ceros finitos)'}
+      </div>
+    </div>
+
+    <!-- 2. Forma Canónica de Bode -->
+    <div class="sol-section">
+      <h3>📊 2. Forma Canónica de Bode y Factores</h3>
+      <p>Se normalizan los factores al formato constante unitaria ${renderTex('(1 + s\\tau)')}:</p>
+      <div class="sol-formula-box">
+        ${renderTex(`K_{Bode} = ${kbode.toFixed(3)} \\quad \\Longrightarrow \\quad 20\\log_{10}(K_{Bode}) = ${kbodeDb.toFixed(2)}\\text{ dB}`)}
+      </div>
+      <table class="sol-table">
+        <thead>
+          <tr>
+            <th>Factor</th>
+            <th>Frecuencia ωc</th>
+            <th>Pendiente Mag</th>
+            <th>Aporte Fase</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${comps.map((c) => `
+            <tr>
+              <td><b>${c.name}</b></td>
+              <td>${c.wc ? `${c.wc.toFixed(3)} rad/s` : '—'}</td>
+              <td>${c.slope !== undefined ? `${c.slope > 0 ? '+' : ''}${c.slope} dB/dec` : '—'}</td>
+              <td>${c.phaseShift !== undefined ? `${c.phaseShift}°` : '—'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 3. Márgenes de Estabilidad en Frecuencia (Bode) -->
+    <div class="sol-section">
+      <h3>📈 3. Márgenes de Estabilidad (Bode)</h3>
+      <div class="sol-formula-box">
+        ${renderTex(`\\omega_{cg} = ${margins.w_pm ? margins.w_pm.toFixed(3) : '\\infty'}\\text{ rad/s} \\quad \\implies \\quad MF = ${margins.PM !== null ? margins.PM.toFixed(2) : '\\infty'}^\\circ`)}
+      </div>
+      <div class="sol-formula-box">
+        ${renderTex(`\\omega_{cp} = ${margins.w_gm ? margins.w_gm.toFixed(3) : '\\infty'}\\text{ rad/s} \\quad \\implies \\quad MG = ${margins.GM !== null ? margins.GM.toFixed(2) : '\\infty'}\\text{ dB}`)}
+      </div>
+      <p><b>Diagnóstico de Lazo Cerrado:</b> ${(margins.PM === null || margins.PM > 0) && (margins.GM === null || margins.GM > 0) ? '<span class="badge badge-success">ESTABLE</span> Margen de fase y ganancia positivos.' : '<span class="badge badge-danger">INESTABLE</span> Cruza el límite de estabilidad.'}</p>
+    </div>
+
+    <!-- 4. Criterio de Nyquist -->
+    <div class="sol-section">
+      <h3>🌀 4. Criterio de Estabilidad de Nyquist</h3>
+      <p>Relación fundamental de Cauchy aplicada al contorno de Nyquist:</p>
+      <div class="sol-formula-box">
+        ${renderTex('Z = N + P', true)}
+      </div>
+      <p>• <b>P (Polos en semiplano derecho Re > 0):</b> ${poles.filter(p => p.re > 1e-5).length}</p>
+      <p>• <b>N (Rodeos horarios al punto -1 + j0):</b> 0</p>
+      <p>• <b>Z (Polos inestables de lazo cerrado):</b> <b style="color:${poles.filter(p => p.re > 1e-5).length === 0 ? '#4ade80' : '#f87171'}">${poles.filter(p => p.re > 1e-5).length}</b></p>
+      <p><b>Conclusión Nyquist:</b> ${poles.filter(p => p.re > 1e-5).length === 0 ? '<span class="badge badge-success">ESTABLE</span> No hay polos cerrados inestables.' : '<span class="badge badge-danger">INESTABLE</span> Existen polos en el semiplano derecho.'}</p>
+    </div>
+
+    <!-- 5. Lugar Geométrico de las Raíces -->
+    <div class="sol-section">
+      <h3>🎯 5. Reglas del Lugar Geométrico de Raíces</h3>
+      ${(() => {
+        const n = poles.length;
+        const m = zeros.length;
+        const asymp = n - m;
+        const sumP = poles.reduce((a, b) => a + b.re, 0);
+        const sumZ = zeros.reduce((a, b) => a + b.re, 0);
+        const sigma = asymp > 0 ? (sumP - sumZ) / asymp : 0;
+        return `
+          <p>• Ramas totales: <b>${n}</b></p>
+          <p>• Ramas hacia el infinito: <b>${asymp}</b></p>
+          <div class="sol-formula-box">
+            ${renderTex(`\\sigma_a = \\frac{\\sum p_i - \\sum z_i}{n - m} = \\frac{(${sumP.toFixed(2)}) - (${sumZ.toFixed(2)})}{${asymp}} = ${sigma.toFixed(3)}`)}
+          </div>
+          <p>• Ángulos de asíntotas:</p>
+          <div class="sol-formula-box">
+            ${asymp > 0 ? Array.from({length: asymp}, (_, k) => renderTex(`\\theta_{${k}} = \\frac{(2(${k})+1)180^\\circ}{${asymp}} = ${(((2*k+1)*180)/asymp).toFixed(1)}^\\circ`)).join(' \\quad , \\quad ') : 'No aplican asíntotas (n = m)'}
+          </div>
+        `;
+      })()}
+    </div>
+  `;
+
+  // Si hay compensador calculado, añadir sección
+  if (state.compResult) {
+    const c = state.compResult;
+    html += `
+      <div class="sol-section">
+        <h3>⚙️ 6. Síntesis de Compensador (${compTypeSelect.value})</h3>
+        <p>Parámetros calculados para cumplir especificación de margen de fase:</p>
+        <div class="sol-formula-box">
+          ${c.explanation.map(e => `<p style="margin:2px 0;">• ${e}</p>`).join('')}
+        </div>
+        <p><b>Comparativa de Márgenes:</b></p>
+        <p>• Original: MF = <b>${c.baseMargins.PM ? c.baseMargins.PM.toFixed(1) + '°' : 'Infinito'}</b></p>
+        <p>• Compensado: MF = <b style="color:#00e5ff">${c.compMargins.PM ? c.compMargins.PM.toFixed(1) + '°' : 'Infinito'}</b></p>
+      </div>
+    `;
+  }
+
+  // Respuesta temporal
+  if (state.stepRespOrig) {
+    const mo = state.stepRespOrig.metrics;
+    const mc = state.stepRespComp ? state.stepRespComp.metrics : null;
+    html += `
+      <div class="sol-section">
+        <h3>⏱️ 7. Respuesta Temporal al Escalón</h3>
+        <table class="sol-table">
+          <thead>
+            <tr>
+              <th>Parámetro</th>
+              <th>Original</th>
+              <th>Compensado</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Tiempo de Subida (Tr)</td>
+              <td>${mo.tr ? mo.tr.toFixed(3) + 's' : '—'}</td>
+              <td>${mc && mc.tr ? mc.tr.toFixed(3) + 's' : '—'}</td>
+            </tr>
+            <tr>
+              <td>Tiempo de Asentamiento 2% (Ts)</td>
+              <td>${mo.ts ? mo.ts.toFixed(3) + 's' : '—'}</td>
+              <td>${mc && mc.ts ? mc.ts.toFixed(3) + 's' : '—'}</td>
+            </tr>
+            <tr>
+              <td>Sobreimpulso Máximo (Mp%)</td>
+              <td>${mo.mpPercent ? mo.mpPercent.toFixed(1) + '%' : '0%'}</td>
+              <td>${mc && mc.mpPercent ? mc.mpPercent.toFixed(1) + '%' : '0%'}</td>
+            </tr>
+            <tr>
+              <td>Error Estacionario (Ess)</td>
+              <td>${mo.ess ? mo.ess.toFixed(3) : '0'}</td>
+              <td>${mc && mc.ess ? mc.ess.toFixed(3) : '0'}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  solutionModalContent.innerHTML = html;
+}
+
+// Alternar Modo Mover con el dedo (Pan)
+btnModePan.addEventListener('click', () => {
+  currentDragMode = 'pan';
+  darkLayoutCommon.dragmode = 'pan';
+  btnModePan.classList.add('highlight');
+  btnModeZoom.classList.remove('highlight');
+  Plotly.relayout(plotContainer, { dragmode: 'pan' });
 });
 
-// Zoom Out
-btnZoomOut.addEventListener('click', () => {
-  const current = plotContainer._fullLayout;
-  if (current && current.xaxis && current.yaxis) {
-    const xRange = current.xaxis.range;
-    const yRange = current.yaxis.range;
-    const xMid = (xRange[0] + xRange[1]) / 2;
-    const xSpan = (xRange[1] - xRange[0]) * 1.4;
-    const yMid = (yRange[0] + yRange[1]) / 2;
-    const ySpan = (yRange[1] - yRange[0]) * 1.4;
-    Plotly.relayout(plotContainer, {
-      'xaxis.range': [xMid - xSpan / 2, xMid + xSpan / 2],
-      'yaxis.range': [yMid - ySpan / 2, yMid + ySpan / 2]
-    });
-  }
+// Alternar Modo Zoom en recuadro
+btnModeZoom.addEventListener('click', () => {
+  currentDragMode = 'zoom';
+  darkLayoutCommon.dragmode = 'zoom';
+  btnModeZoom.classList.add('highlight');
+  btnModePan.classList.remove('highlight');
+  Plotly.relayout(plotContainer, { dragmode: 'zoom' });
+});
+
+// Modal de Solución Completa
+btnFullSolution.addEventListener('click', () => {
+  if (!state.parsedTF) return;
+  populateFullSolutionModal();
+  modalSolution.classList.remove('hidden');
+});
+
+btnCloseSolution.addEventListener('click', () => {
+  modalSolution.classList.add('hidden');
+});
+
+btnDismissSolution.addEventListener('click', () => {
+  modalSolution.classList.add('hidden');
 });
 
 // Reset Vista
