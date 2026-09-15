@@ -906,29 +906,62 @@ function renderNyquistPlot() {
   const metrics = getControlMetrics();
 
   if (state.step === 0) {
-    title = "Paso 0: Teorema de Cauchy y Polos de Lazo Abierto";
+    title = "Paso 0: Principio de Cauchy, Tipo de Sistema y Contorno de Nyquist";
+    const sysType = metrics ? metrics.systemType : 0;
+    const relDeg = metrics ? metrics.relDegree : 1;
+    const typeDesc = sysType === 0
+      ? `Tipo 0: Sin integradores en lazo abierto. La curva de Nyquist <b>arranca en un punto finito</b> en el eje real al aumentar ω desde 0⁺ (no desde el infinito).`
+      : sysType === 1
+      ? `Tipo 1: Un polo en el origen (s = 0). La curva de Nyquist sale desde <b>∞ con ángulo −90°</b>. El semicírculo infinitesimal ε·e<sup>jθ</sup> se mapea en un arco de radio infinito que barre −90° hacia 0°.`
+      : sysType === 2
+      ? `Tipo 2: Dos polos en el origen. La curva de Nyquist sale desde <b>∞ con ángulo −180°</b>. El mapa del contorno en el origen es un arco de radio infinito que barre de −180° hasta 0°.`
+      : `Tipo ${sysType}: La curva arranca desde ∞ con ángulo −${sysType * 90}°.`;
+
     desc = `
-      <p>El criterio de Nyquist es una aplicación del <b>Principio del Argumento de Cauchy</b> para evaluar la estabilidad absoluta en lazo cerrado:</p>
-      
+      <p>El criterio de Nyquist es una aplicación del <b>Principio del Argumento de Cauchy</b> para evaluar la estabilidad absoluta en lazo cerrado sin necesidad de factorizar el polinomio característico:</p>
+
       <div style="background:#11111e; padding:8px; border-radius:6px; margin:6px 0; text-align:center;">
         ${renderTex('Z = N + P', true)}
       </div>
 
       <div class="metric-grid">
         <div class="metric-card">
+          <div class="metric-lbl">Tipo de Sistema</div>
+          <div class="metric-val" style="color:#a78bfa;">${sysType}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-lbl">Grado Relativo (n-m)</div>
+          <div class="metric-val" style="color:#ffd700;">${relDeg}</div>
+        </div>
+        <div class="metric-card">
           <div class="metric-lbl">Polos Inestables Abierto (P)</div>
           <div class="metric-val" style="color:${P === 0 ? '#4ade80' : '#f87171'}">${P}</div>
         </div>
         <div class="metric-card">
           <div class="metric-lbl">Condición de Estabilidad</div>
-          <div class="metric-val" style="color:#00e5ff;">Z = 0 (N = ${-P})</div>
+          <div class="metric-val" style="color:#00e5ff;">N = ${-P} (Z = 0)</div>
         </div>
+      </div>
+
+      <div style="background:#171728; padding:8px; border-radius:6px; margin:6px 0;">
+        <p><b>📐 Tipo de Sistema y Comportamiento en ω → 0⁺:</b></p>
+        <p style="font-size:12px; margin-top:4px;">${typeDesc}</p>
+        <p style="font-size:11px; color:#94a3b8; margin-top:3px;">El contorno de Nyquist incluye: eje imaginario positivo (ω: 0⁺ → +∞), semicírculo a ∞ sentido horario (+∞ → −∞), eje imaginario negativo (−∞ → 0⁻). El mapeo de toda la frontera del semiplano derecho da lugar a la trayectoria polar completa.</p>
+      </div>
+
+      <div style="background:#171728; padding:8px; border-radius:6px; margin:6px 0;">
+        <p><b>📐 Comportamiento en ω → ∞:</b></p>
+        <p style="font-size:12px; margin-top:4px;">El grado relativo r = n − m = ${relDeg} determina el ángulo de llegada al origen:</p>
+        <div style="text-align:center; margin:4px 0;">
+          ${renderTex(`\\angle G(j\\omega) \\xrightarrow{\\omega\\to\\infty} -${relDeg} \\times 90^\\circ = -${relDeg * 90}^\\circ`, true)}
+        </div>
+        <p style="font-size:11px; color:#94a3b8;">Para dibujar a mano: el trazo parte de ${sysType === 0 ? 'un punto finito en el eje real' : `∞ con ángulo −${sysType * 90}°`} y termina en el origen con ángulo −${relDeg * 90}°.</p>
       </div>
 
       ${state.parsedTF.hasK ? `
         <div style="background:rgba(245, 158, 11, 0.12); border:1px solid #f59e0b; padding:8px; border-radius:6px; margin:6px 0;">
           <b style="color:#fbbf24;">🔍 Parámetro de Ganancia K detectado:</b>
-          <p style="font-size:11px; margin-top:2px;">La gráfica nominal se muestra para <b>K = 1</b>.</p>
+          <p style="font-size:11px; margin-top:2px;">La gráfica nominal se muestra para <b>K = 1</b>. Escalar K equivale a ampliar/contraer toda la trayectoria polar proporcionalmente.</p>
           <p style="font-size:12px; margin-top:4px;">Rango de estabilidad para K: <b style="color:#4ade80;">${kStability.kRangeStr}</b></p>
         </div>
       ` : `
@@ -938,16 +971,24 @@ function renderNyquistPlot() {
         </div>
       `}
 
-      <p><b>Definición de Variables:</b></p>
-      <p>• <b>P:</b> Número de polos de lazo abierto en el semiplano derecho (Re &gt; 0). En este sistema: <b>P = ${P}</b>.</p>
-      <p>• <b>N:</b> Número de rodeos netos en sentido <i>horario</i> al punto crítico <b>-1 + j0</b>.</p>
-      <p>• <b>Z:</b> Número de polos inestables de lazo cerrado (debe ser <b>0</b> para garantizar estabilidad asintótica).</p>
+      <div style="background:#171728; padding:8px; border-radius:6px; margin:6px 0;">
+        <p><b>📌 Definición de Variables del Criterio:</b></p>
+        <p style="margin-top:4px;">• <b>P:</b> Polos de lazo abierto en el semiplano derecho (Re > 0). Este sistema: <b>P = ${P}</b>.</p>
+        <p>• <b>N:</b> Número de rodeos netos en sentido <i>horario</i> al punto crítico <b>−1 + j0</b>. Antihorario cuenta negativo.</p>
+        <p>• <b>Z:</b> Polos inestables de lazo cerrado. Se necesita <b>Z = 0</b> para estabilidad asintótica.</p>
+        <p style="margin-top:4px; color:#94a3b8; font-size:11px;">Para que Z = 0 con P = ${P}: se necesita N = ${-P} (${P === 0 ? 'la curva no debe rodear el punto -1' : `la curva debe rodear el punto -1 en sentido ANTIHORARIO ${P} veces`}).</p>
+      </div>
 
       <div class="pedagogy-tip">
-        <b>💡 Intuición Geométrica:</b> Si la planta abierta ya es estable (P = 0), el lazo cerrado será estable si y sólo si el trazo de Nyquist <b>NO rodea</b> al punto crítico -1 (es decir, N = 0).
+        <b>💡 Estrategia de Examen:</b> Para resolver Nyquist a mano:<br>
+        1. Determinar Tipo de Sistema → punto de arranque.<br>
+        2. Calcular polos/ceros → ángulo de fase a baja y alta frecuencia.<br>
+        3. Encontrar ω<sub>cp</sub> igualando Im{G(jω)} = 0 → calcular K<sub>crit</sub> = 1/|Re{G(jω<sub>cp</sub>)}|.<br>
+        4. Contar rodeos N → concluir Z = N + P.
       </div>
     `;
   }
+
 
   if (state.step >= 1) {
     // Curva w > 0
@@ -974,19 +1015,64 @@ function renderNyquistPlot() {
     }
 
     if (state.step === 1) {
-      title = "Paso 1: Trazo Polar para Frecuencias Positivas (ω > 0)";
+      const relDeg = metrics ? metrics.relDegree : 1;
+      const sysType = metrics ? metrics.systemType : 0;
+      const wCp = state.margins && state.margins.w_pc ? state.margins.w_pc.toFixed(4) : '—';
+      const xCp = state.margins && state.margins.intersect_x != null ? state.margins.intersect_x.toFixed(4) : '—';
+      const kCrit = kStability.kCrit ? kStability.kCrit.toFixed(4) : '∞';
+
+      title = "Paso 1: Trazo Polar y Deducción Analítica de K_crit";
       desc = `
         <p>Mapeo del eje imaginario positivo <b>s = jω</b> desde <b>ω = 0<sup>+</sup> hasta +∞</b>:</p>
         <p>• Cada punto en la curva representa el vector complejo <b>G(jω) = |G(jω)| e<sup>j∠G(jω)</sup></b>.</p>
-        <p>• La flecha <b style="color:#ffd700">DORADA</b> indica el sentido de avance al aumentar la frecuencia angular ω.</p>
-        <p>• Al crecer ω hacia +∞, la magnitud decae hacia el origen <b>(0, 0)</b> con un ángulo asintótico de <b>-${90 * (metrics ? metrics.relDegree : 1)}°</b> debido al grado relativo (n - m = ${metrics ? metrics.relDegree : 1}).</p>
+        <p>• La flecha <b style="color:#ffd700">DORADA</b> indica el sentido de avance al aumentar ω.</p>
+        <p>• Al crecer ω → +∞: magnitud → 0 con ángulo asintótico <b>−${relDeg * 90}°</b> (grado relativo r = ${relDeg}).</p>
+
+        <div style="background:#171728; padding:8px; border-radius:6px; margin:6px 0;">
+          <p><b>📐 Deducción Analítica de ω<sub>cp</sub> y K<sub>crit</sub> (Procedimiento de Examen):</b></p>
+          <p style="font-size:11px; margin-top:4px; color:#94a3b8;">La frecuencia de cruce de fase ω<sub>cp</sub> es donde la curva corta el eje real negativo, es decir donde la parte imaginaria se anula:</p>
+          <div style="text-align:center; margin:4px 0;">
+            ${renderTex('\\text{Im}\\{G(j\\omega_{cp})\\} = 0 \\quad \\Rightarrow \\quad \\text{resolver para } \\omega_{cp}', true)}
+          </div>
+          <p style="font-size:11px; color:#94a3b8; margin-top:3px;">Una vez hallado ω<sub>cp</sub>, se evalúa la parte real:</p>
+          <div style="text-align:center; margin:4px 0;">
+            ${renderTex('x_{cp} = \\text{Re}\\{G(j\\omega_{cp})\\}', true)}
+          </div>
+          <p style="font-size:11px; color:#94a3b8; margin-top:3px;">La ganancia crítica es la ganancia K que lleva ese punto exactamente al punto crítico −1:</p>
+          <div style="text-align:center; margin:4px 0;">
+            ${renderTex('K \\cdot x_{cp} = -1 \\quad \\Rightarrow \\quad K_{crit} = \\frac{1}{|x_{cp}|}', true)}
+          </div>
+          <div class="metric-grid" style="margin-top:6px;">
+            <div class="metric-card">
+              <div class="metric-lbl">ω<sub>cp</sub> (rad/s)</div>
+              <div class="metric-val" style="color:#ffd700;">${wCp}</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-lbl">x<sub>cp</sub> = Re{G(jω<sub>cp</sub>)}</div>
+              <div class="metric-val" style="color:#f87171;">${xCp}</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-lbl">K<sub>crit</sub> = 1/|x<sub>cp</sub>|</div>
+              <div class="metric-val" style="color:#4ade80;">${kCrit}</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-lbl">Estabilidad</div>
+              <div class="metric-val" style="color:#00e5ff;">${kStability.kRangeStr}</div>
+            </div>
+          </div>
+        </div>
 
         <div style="text-align:center; margin:8px 0;">
-          <button id="btnOpenTableInline" class="btn-primary" style="font-size:11px; padding:6px 12px; background:#059669;">📋 Ver Tabulación de Puntos para Dibujo</button>
+          <button id="btnOpenTableInline" class="btn-primary" style="font-size:11px; padding:6px 12px; background:#059669;">📋 Ver Tabulación de Puntos para Dibujo a Mano</button>
         </div>
 
         <div class="pedagogy-tip">
-          <b>💡 Consejo de Análisis:</b> La distancia desde el origen a cualquier punto del trazo es la ganancia en magnitud pura |G(jω)|, y el ángulo respecto al semieje real positivo es la fase en radianes o grados.
+          <b>💡 Cómo trazar Nyquist a mano en examen:</b><br>
+          1. Calcula |G(jω)| y ∠G(jω) para al menos 5 frecuencias (tabla de tabulación).<br>
+          2. Usa coordenadas polares → Cartesianas: Re = |G|·cos(∠G), Im = |G|·sin(∠G).<br>
+          3. Marca los puntos en el plano complejo y únelos con curva suave.<br>
+          4. Traza el reflejo (parte inferior) por simetría respecto al eje real.<br>
+          5. Verifica si la curva rodea el punto −1 para concluir estabilidad.
         </div>
       `;
     }
@@ -2263,6 +2349,27 @@ btnCalculateComp.addEventListener('click', () => {
 btnAbout.addEventListener('click', () => modalAbout.classList.remove('hidden'));
 btnCloseAbout.addEventListener('click', () => modalAbout.classList.add('hidden'));
 btnDismissAbout.addEventListener('click', () => modalAbout.classList.add('hidden'));
+
+// ==========================================
+// RESIZE / ORIENTACIÓN - Para tablets y rotación
+// ==========================================
+let resizeTimer = null;
+function handleViewportChange() {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    // Hacer que Plotly adapte el gráfico al nuevo tamaño del contenedor
+    if (plotContainer && plotContainer.data) {
+      Plotly.Plots.resize(plotContainer);
+    }
+  }, 150);
+}
+
+window.addEventListener('resize', handleViewportChange, { passive: true });
+window.addEventListener('orientationchange', () => {
+  // Esperar un poco más en orientationchange porque el navegador tarda
+  // en actualizar las dimensiones tras la rotación
+  setTimeout(handleViewportChange, 300);
+}, { passive: true });
 
 // Iniciar con el ejemplo por defecto
 analyzeSystem();

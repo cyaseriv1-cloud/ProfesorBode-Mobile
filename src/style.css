@@ -36,9 +36,25 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  max-width: 600px;
+  max-width: 640px;
   margin: 0 auto;
   padding-bottom: 75px;
+}
+
+/* Tablet vertical (768px+) */
+@media (min-width: 768px) {
+  #app {
+    max-width: min(92vw, 960px);
+    padding-bottom: 80px;
+  }
+}
+
+/* Tablet horizontal / pantalla grande (1024px+) */
+@media (min-width: 1024px) {
+  #app {
+    max-width: min(96vw, 1280px);
+    padding-bottom: 84px;
+  }
 }
 
 /* Header */
@@ -240,6 +256,30 @@ body {
   min-height: 385px;
 }
 
+/* Tablet vertical (768px+): gráficas más grandes */
+@media (min-width: 768px) {
+  .plot-box {
+    height: 450px !important;
+    min-height: 450px !important;
+  }
+  .plot-box.bode-plot {
+    height: 580px !important;
+    min-height: 580px !important;
+  }
+}
+
+/* Tablet grande / horizontal (1024px+) */
+@media (min-width: 1024px) {
+  .plot-box {
+    height: 520px !important;
+    min-height: 520px !important;
+  }
+  .plot-box.bode-plot {
+    height: 640px !important;
+    min-height: 640px !important;
+  }
+}
+
 /* Floating Chart Navigation Toolbar */
 .chart-toolbar {
   display: flex;
@@ -351,6 +391,50 @@ body.chart-pan-active .plot-box .svg-container {
 
 .explanation-card.expanded {
   max-height: 500px;
+}
+
+/* Tablet vertical (768px+): tarjeta explicación más alta */
+@media (min-width: 768px) {
+  .explanation-card {
+    font-size: 14px;
+    max-height: 380px;
+    line-height: 1.65;
+  }
+  .explanation-card.expanded {
+    max-height: 650px;
+  }
+  .metric-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .modal-card-large {
+    max-width: min(90vw, 820px) !important;
+  }
+  .modal-card {
+    max-width: min(85vw, 600px);
+  }
+  .pedagogy-tip {
+    font-size: 13px;
+    padding: 10px 14px;
+  }
+  .solution-scroll-body {
+    font-size: 14px;
+  }
+  .sol-table {
+    font-size: 13px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .explanation-card {
+    font-size: 15px;
+    max-height: 440px;
+  }
+  .explanation-card.expanded {
+    max-height: 800px;
+  }
+  .modal-card-large {
+    max-width: min(92vw, 1000px) !important;
+  }
 }
 
 .card-header-row {
@@ -493,9 +577,23 @@ body.chart-pan-active .plot-box .svg-container {
   bottom: 0;
   left: 0;
   right: 0;
-  max-width: 600px;
+  max-width: 640px;
   margin: 0 auto;
   z-index: 100;
+}
+
+@media (min-width: 768px) {
+  .bottom-nav {
+    max-width: min(92vw, 960px);
+    padding: 8px 0;
+  }
+}
+
+@media (min-width: 1024px) {
+  .bottom-nav {
+    max-width: min(96vw, 1280px);
+    padding: 10px 0;
+  }
 }
 
 .nav-item {
