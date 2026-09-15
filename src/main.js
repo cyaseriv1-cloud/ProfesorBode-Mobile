@@ -197,11 +197,17 @@ const btnCloseNyquistTable = document.getElementById('btnCloseNyquistTable');
 const btnDismissNyquistTable = document.getElementById('btnDismissNyquistTable');
 const nyquistTableContent = document.getElementById('nyquistTableContent');
 
-// Estado del modo de interacción en la gráfica (por defecto: 'pan' para mover cuando se activa)
+// Estado del modo de interacción en la gráfica
 let currentDragMode = 'pan';
+let isNormalPanActive = false;
+
+// Determina si Plotly debe capturar los toques para mover/hacer zoom o dejar libre el scroll vertical de la pantalla
+function getEffectiveDragMode() {
+  return (state.isFullscreen || isNormalPanActive) ? (currentDragMode || 'pan') : false;
+}
 
 // Configuración común de Plotly para tema Dark y móvil
-// NOTA: Por defecto en modo normal el dragmode está inactivo (false) para que el dedo pueda scrolear la pantalla cómodamente sin mover los ejes de la gráfica. Se activa en Pantalla Completa o al pulsar 'Mover'/'Zoom'.
+// Por defecto dragmode es false para que el usuario pueda desplazarse verticalmente por la página sin mover los ejes.
 const darkLayoutCommon = {
   paper_bgcolor: '#222233',
   plot_bgcolor: '#1c1c2e',
@@ -215,7 +221,7 @@ const darkLayoutCommon = {
 const plotlyConfig = {
   responsive: true,
   displayModeBar: false,
-  scrollZoom: true
+  scrollZoom: false
 };
 
 // Análisis de la función ingresada
@@ -813,7 +819,7 @@ function renderBodePlot() {
 
   const layout = {
     ...darkLayoutCommon,
-    dragmode: currentDragMode,
+    dragmode: getEffectiveDragMode(),
     margin: { t: 15, b: 35, l: 45, r: 15 },
     xaxis: {
       type: 'log',
@@ -1126,6 +1132,7 @@ function renderNyquistPlot() {
   // Viewport inteligente enfocado en el rango relevante para evitar aplanamiento
   const layout = {
     ...darkLayoutCommon,
+    dragmode: getEffectiveDragMode(),
     xaxis: { title: 'Parte Real', gridcolor: '#33334d', zerolinecolor: '#ffffff', range: [-2.4, 1.4] },
     yaxis: { title: 'Parte Imaginaria', gridcolor: '#33334d', zerolinecolor: '#ffffff', range: [-1.8, 1.8] }
   };
@@ -1352,6 +1359,7 @@ function renderLocusPlot() {
 
   const layout = {
     ...darkLayoutCommon,
+    dragmode: getEffectiveDragMode(),
     xaxis: { title: 'Eje Real (σ)', gridcolor: '#33334d', zerolinecolor: '#ffffff' },
     yaxis: { title: 'Eje Imag (jω)', gridcolor: '#33334d', zerolinecolor: '#ffffff' }
   };
@@ -1462,7 +1470,7 @@ function renderCompensatorPlot() {
 
   const layout = {
     ...darkLayoutCommon,
-    dragmode: currentDragMode,
+    dragmode: getEffectiveDragMode(),
     margin: { t: 15, b: 35, l: 45, r: 15 },
     xaxis: {
       type: 'log',
@@ -1562,6 +1570,7 @@ function renderStepPlot() {
 
   const layout = {
     ...darkLayoutCommon,
+    dragmode: getEffectiveDragMode(),
     xaxis: { title: 'Tiempo t (segundos)', gridcolor: '#33334d' },
     yaxis: { title: 'Amplitud y(t)', gridcolor: '#33334d' }
   };
@@ -1572,21 +1581,6 @@ function renderStepPlot() {
 // ==========================================
 // CONTROLES AVANZADOS DE NAVEGACIÓN Y ZOOM
 // ==========================================
-
-// Modo Pantalla Completa
-btnFullscreen.addEventListener('click', () => {
-  state.isFullscreen = !state.isFullscreen;
-  if (state.isFullscreen) {
-    appElement.classList.add('fullscreen-mode');
-    btnFullscreen.textContent = '✕ Salir Pantalla';
-  } else {
-    appElement.classList.remove('fullscreen-mode');
-    btnFullscreen.textContent = '⛶ Pantalla Completa';
-  }
-  setTimeout(() => {
-    Plotly.Plots.resize(plotContainer);
-  }, 100);
-});
 
 // Centrar en -1 (Nyquist)
 btnFocusCrit.addEventListener('click', () => {
@@ -1993,20 +1987,57 @@ function populateNyquistTableModal() {
 
 // Alternar Modo Mover con el dedo (Pan)
 btnModePan.addEventListener('click', () => {
-  currentDragMode = 'pan';
-  darkLayoutCommon.dragmode = 'pan';
-  btnModePan.classList.add('highlight');
-  btnModeZoom.classList.remove('highlight');
-  Plotly.relayout(plotContainer, { dragmode: 'pan' });
+  if (state.isFullscreen) {
+    currentDragMode = 'pan';
+    btnModePan.classList.add('highlight');
+    btnModeZoom.classList.remove('highlight');
+    darkLayoutCommon.dragmode = 'pan';
+    Plotly.relayout(plotContainer, { dragmode: 'pan' });
+  } else {
+    // En modo normal actúa como interruptor (toggle)
+    if (isNormalPanActive && currentDragMode === 'pan') {
+      isNormalPanActive = false;
+      document.body.classList.remove('chart-pan-active');
+      btnModePan.classList.remove('highlight');
+      darkLayoutCommon.dragmode = false;
+      Plotly.relayout(plotContainer, { dragmode: false });
+    } else {
+      isNormalPanActive = true;
+      currentDragMode = 'pan';
+      document.body.classList.add('chart-pan-active');
+      btnModePan.classList.add('highlight');
+      btnModeZoom.classList.remove('highlight');
+      darkLayoutCommon.dragmode = 'pan';
+      Plotly.relayout(plotContainer, { dragmode: 'pan' });
+    }
+  }
 });
 
 // Alternar Modo Zoom en recuadro
 btnModeZoom.addEventListener('click', () => {
-  currentDragMode = 'zoom';
-  darkLayoutCommon.dragmode = 'zoom';
-  btnModeZoom.classList.add('highlight');
-  btnModePan.classList.remove('highlight');
-  Plotly.relayout(plotContainer, { dragmode: 'zoom' });
+  if (state.isFullscreen) {
+    currentDragMode = 'zoom';
+    btnModeZoom.classList.add('highlight');
+    btnModePan.classList.remove('highlight');
+    darkLayoutCommon.dragmode = 'zoom';
+    Plotly.relayout(plotContainer, { dragmode: 'zoom' });
+  } else {
+    if (isNormalPanActive && currentDragMode === 'zoom') {
+      isNormalPanActive = false;
+      document.body.classList.remove('chart-pan-active');
+      btnModeZoom.classList.remove('highlight');
+      darkLayoutCommon.dragmode = false;
+      Plotly.relayout(plotContainer, { dragmode: false });
+    } else {
+      isNormalPanActive = true;
+      currentDragMode = 'zoom';
+      document.body.classList.add('chart-pan-active');
+      btnModeZoom.classList.add('highlight');
+      btnModePan.classList.remove('highlight');
+      darkLayoutCommon.dragmode = 'zoom';
+      Plotly.relayout(plotContainer, { dragmode: 'zoom' });
+    }
+  }
 });
 
 // Pantalla Completa (Full screen Mode)
@@ -2014,15 +2045,37 @@ btnFullscreen.addEventListener('click', () => {
   state.isFullscreen = !state.isFullscreen;
   if (state.isFullscreen) {
     document.body.classList.add('fullscreen-mode');
+    appElement.classList.add('fullscreen-mode');
     btnFullscreen.textContent = '✖ Salir';
-    darkLayoutCommon.dragmode = currentDragMode || 'pan';
+    currentDragMode = currentDragMode || 'pan';
+    if (currentDragMode === 'pan') {
+      btnModePan.classList.add('highlight');
+      btnModeZoom.classList.remove('highlight');
+    } else if (currentDragMode === 'zoom') {
+      btnModeZoom.classList.add('highlight');
+      btnModePan.classList.remove('highlight');
+    }
+    plotlyConfig.scrollZoom = true;
   } else {
     document.body.classList.remove('fullscreen-mode');
+    appElement.classList.remove('fullscreen-mode');
+    document.body.classList.remove('chart-pan-active');
     btnFullscreen.textContent = '⛶ Pantalla';
-    darkLayoutCommon.dragmode = false;
+    isNormalPanActive = false;
+    btnModePan.classList.remove('highlight');
+    btnModeZoom.classList.remove('highlight');
+    plotlyConfig.scrollZoom = false;
   }
-  Plotly.relayout(plotContainer, { dragmode: darkLayoutCommon.dragmode });
-  Plotly.Plots.resize(plotContainer);
+
+  const effDragMode = getEffectiveDragMode();
+  darkLayoutCommon.dragmode = effDragMode;
+  Plotly.relayout(plotContainer, { dragmode: effDragMode });
+  setTimeout(() => {
+    Plotly.Plots.resize(plotContainer);
+  }, 50);
+  setTimeout(() => {
+    Plotly.Plots.resize(plotContainer);
+  }, 200);
 });
 
 // Auto redimensionar gráficos en rotación y cambio de ventana
@@ -2110,6 +2163,14 @@ navButtons.forEach(btn => {
     btn.classList.add('active');
     state.currentTab = btn.getAttribute('data-tab');
     state.step = 0;
+    if (!state.isFullscreen) {
+      isNormalPanActive = false;
+      document.body.classList.remove('chart-pan-active');
+      btnModePan.classList.remove('highlight');
+      btnModeZoom.classList.remove('highlight');
+      darkLayoutCommon.dragmode = false;
+      plotlyConfig.scrollZoom = false;
+    }
     renderCurrentTab();
   });
 });

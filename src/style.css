@@ -279,23 +279,23 @@ body {
   border-color: #b45309;
 }
 
-/* Fullscreen Mode */
-#app.fullscreen-mode .app-header,
-#app.fullscreen-mode .input-section {
-  display: none !important;
+/* Scroll libre de pantalla sobre la gráfica en modo normal */
+body:not(.fullscreen-mode):not(.chart-pan-active) .plot-wrapper,
+body:not(.fullscreen-mode):not(.chart-pan-active) .plot-box,
+body:not(.fullscreen-mode):not(.chart-pan-active) .plot-box .plot-container,
+body:not(.fullscreen-mode):not(.chart-pan-active) .plot-box .svg-container,
+body:not(.fullscreen-mode):not(.chart-pan-active) .plot-box svg,
+body:not(.fullscreen-mode):not(.chart-pan-active) .plot-box .draglayer,
+body:not(.fullscreen-mode):not(.chart-pan-active) .plot-box .nsewdrag {
+  touch-action: pan-y !important;
 }
 
-#app.fullscreen-mode .chart-section {
-  padding: 4px 8px;
-}
-
-#app.fullscreen-mode .plot-box {
-  height: calc(100vh - 160px);
-  min-height: calc(100vh - 160px);
-}
-
-#app.fullscreen-mode .explanation-card {
-  max-height: 80px;
+/* Modo interactivo de paneo activado explícitamente en modo normal */
+body.chart-pan-active .plot-box .draglayer,
+body.chart-pan-active .plot-box .nsewdrag,
+body.chart-pan-active .plot-box .svg-container {
+  touch-action: none !important;
+  pointer-events: all !important;
 }
 
 /* Step controls */
@@ -779,6 +779,13 @@ body.fullscreen-mode .plot-box,
 body.fullscreen-mode .plot-box.bode-plot {
   height: 100% !important;
   min-height: 100% !important;
+}
+
+body.fullscreen-mode .plot-box .draglayer,
+body.fullscreen-mode .plot-box .nsewdrag,
+body.fullscreen-mode .plot-box .svg-container {
+  pointer-events: all !important;
+  touch-action: none !important;
 }
 
 /* Responsividad horizontal (Landscape / Rotación de pantalla) */
