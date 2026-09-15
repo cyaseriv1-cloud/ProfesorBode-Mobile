@@ -731,3 +731,71 @@ body {
   color: #38bdf8;
   margin-left: 4px;
 }
+
+/* Teclas de navegación táctil */
+.key-nav {
+  background-color: #1e3a5f !important;
+  color: #38bdf8 !important;
+  font-size: 15px !important;
+  font-weight: bold !important;
+}
+
+.key-nav:active {
+  background-color: #0284c7 !important;
+}
+
+/* Modo Pantalla Completa */
+body.fullscreen-mode {
+  overflow: hidden !important;
+}
+
+body.fullscreen-mode #app {
+  max-width: 100vw !important;
+  height: 100vh !important;
+  padding-bottom: 0 !important;
+}
+
+body.fullscreen-mode .app-header,
+body.fullscreen-mode .input-section,
+body.fullscreen-mode .step-controls,
+body.fullscreen-mode .explanation-card,
+body.fullscreen-mode .comp-panel,
+body.fullscreen-mode .bottom-nav {
+  display: none !important;
+}
+
+body.fullscreen-mode .chart-section {
+  padding: 4px !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  overflow: hidden !important;
+}
+
+body.fullscreen-mode .plot-wrapper {
+  height: calc(100vh - 44px) !important;
+}
+
+body.fullscreen-mode .plot-box,
+body.fullscreen-mode .plot-box.bode-plot {
+  height: 100% !important;
+  min-height: 100% !important;
+}
+
+/* Responsividad horizontal (Landscape / Rotación de pantalla) */
+@media (orientation: landscape) and (max-height: 600px) {
+  #app {
+    max-width: 100vw !important;
+    padding-bottom: 50px !important;
+  }
+  .chart-section {
+    padding: 6px !important;
+  }
+  .plot-box {
+    height: 330px !important;
+    min-height: 330px !important;
+  }
+  .plot-box.bode-plot {
+    height: 440px !important;
+    min-height: 440px !important;
+  }
+}

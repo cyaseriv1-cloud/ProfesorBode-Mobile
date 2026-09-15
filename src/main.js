@@ -11,7 +11,10 @@ import {
   designCompensator,
   getBodeComponents,
   polyAdd,
-  polyMultiply
+  polyMultiply,
+  calculateKStabilityRange,
+  getNyquistTabulation,
+  formatPoly
 } from './controlEngine.js';
 
 // Estado global de la aplicación
@@ -187,10 +190,18 @@ const btnCloseSolution = document.getElementById('btnCloseSolution');
 const btnDismissSolution = document.getElementById('btnDismissSolution');
 const solutionModalContent = document.getElementById('solutionModalContent');
 
-// Estado del modo de interacción en la gráfica (por defecto: 'pan' para mover con el dedo)
+// Modal Tabulación Nyquist
+const btnNyquistTable = document.getElementById('btnNyquistTable');
+const modalNyquistTable = document.getElementById('modalNyquistTable');
+const btnCloseNyquistTable = document.getElementById('btnCloseNyquistTable');
+const btnDismissNyquistTable = document.getElementById('btnDismissNyquistTable');
+const nyquistTableContent = document.getElementById('nyquistTableContent');
+
+// Estado del modo de interacción en la gráfica (por defecto: 'pan' para mover cuando se activa)
 let currentDragMode = 'pan';
 
 // Configuración común de Plotly para tema Dark y móvil
+// NOTA: Por defecto en modo normal el dragmode está inactivo (false) para que el dedo pueda scrolear la pantalla cómodamente sin mover los ejes de la gráfica. Se activa en Pantalla Completa o al pulsar 'Mover'/'Zoom'.
 const darkLayoutCommon = {
   paper_bgcolor: '#222233',
   plot_bgcolor: '#1c1c2e',
@@ -198,7 +209,7 @@ const darkLayoutCommon = {
   font: { color: '#f1f5f9', size: 10 },
   showlegend: true,
   legend: { orientation: 'h', y: 1.14, x: 0, font: { size: 9 } },
-  dragmode: 'pan'
+  dragmode: false
 };
 
 const plotlyConfig = {
@@ -235,11 +246,13 @@ function analyzeSystem() {
 function renderCurrentTab() {
   if (!state.parsedTF) return;
 
-  // Actualizar visibilidad del botón 'Centrar en -1' sólo en Nyquist
+  // Actualizar visibilidad de herramientas exclusivas de Nyquist
   if (state.currentTab === 'nyquist') {
     btnFocusCrit.classList.remove('hidden');
+    if (btnNyquistTable) btnNyquistTable.classList.remove('hidden');
   } else {
     btnFocusCrit.classList.add('hidden');
+    if (btnNyquistTable) btnNyquistTable.classList.add('hidden');
   }
 
   // Ajustar visibilidad de paneles auxiliares
@@ -881,6 +894,7 @@ function renderNyquistPlot() {
 
   const denRoots = findRoots(state.parsedTF.den);
   const P = denRoots.filter(r => r.re > 1e-5).length;
+  const kStability = calculateKStabilityRange(state.parsedTF.num, state.parsedTF.den, state.margins);
   const N = 0; // Conteo neto de rodeos horarios para sistemas de fase mínima estables
   const Z = N + P;
   const metrics = getControlMetrics();
@@ -904,6 +918,19 @@ function renderNyquistPlot() {
           <div class="metric-val" style="color:#00e5ff;">Z = 0 (N = ${-P})</div>
         </div>
       </div>
+
+      ${state.parsedTF.hasK ? `
+        <div style="background:rgba(245, 158, 11, 0.12); border:1px solid #f59e0b; padding:8px; border-radius:6px; margin:6px 0;">
+          <b style="color:#fbbf24;">🔍 Parámetro de Ganancia K detectado:</b>
+          <p style="font-size:11px; margin-top:2px;">La gráfica nominal se muestra para <b>K = 1</b>.</p>
+          <p style="font-size:12px; margin-top:4px;">Rango de estabilidad para K: <b style="color:#4ade80;">${kStability.kRangeStr}</b></p>
+        </div>
+      ` : `
+        <div style="background:#171728; padding:8px; border-radius:6px; margin:6px 0;">
+          <b>⚖️ Rango de Estabilidad para Ganancia K:</b>
+          <p style="font-size:12px; margin-top:3px;">Condición para estabilidad: <b style="color:#4ade80;">${kStability.kRangeStr}</b></p>
+        </div>
+      `}
 
       <p><b>Definición de Variables:</b></p>
       <p>• <b>P:</b> Número de polos de lazo abierto en el semiplano derecho (Re &gt; 0). En este sistema: <b>P = ${P}</b>.</p>
@@ -947,6 +974,10 @@ function renderNyquistPlot() {
         <p>• Cada punto en la curva representa el vector complejo <b>G(jω) = |G(jω)| e<sup>j∠G(jω)</sup></b>.</p>
         <p>• La flecha <b style="color:#ffd700">DORADA</b> indica el sentido de avance al aumentar la frecuencia angular ω.</p>
         <p>• Al crecer ω hacia +∞, la magnitud decae hacia el origen <b>(0, 0)</b> con un ángulo asintótico de <b>-${90 * (metrics ? metrics.relDegree : 1)}°</b> debido al grado relativo (n - m = ${metrics ? metrics.relDegree : 1}).</p>
+
+        <div style="text-align:center; margin:8px 0;">
+          <button id="btnOpenTableInline" class="btn-primary" style="font-size:11px; padding:6px 12px; background:#059669;">📋 Ver Tabulación de Puntos para Dibujo</button>
+        </div>
 
         <div class="pedagogy-tip">
           <b>💡 Consejo de Análisis:</b> La distancia desde el origen a cualquier punto del trazo es la ganancia en magnitud pura |G(jω)|, y el ángulo respecto al semieje real positivo es la fase en radianes o grados.
@@ -1057,6 +1088,17 @@ function renderNyquistPlot() {
       </div>
 
       <div style="background:#171728; padding:8px; border-radius:6px; margin-bottom:6px;">
+        <h4 style="color:#ffd700; margin-bottom:4px;">⚖️ Rango Crítico de Ganancia K para Estabilidad:</h4>
+        <p>• Condición de Estabilidad: <b style="color:#4ade80; font-size:13px;">${kStability.kRangeStr}</b></p>
+        <p style="font-size:11px; color:#cbd5e1; margin-top:3px;">${kStability.verdict}</p>
+        ${kStability.kCrit ? `<p style="font-size:11px; color:#38bdf8; margin-top:2px;">Ganancia Crítica: <b>K_crit = ${kStability.kCrit.toFixed(3)}</b> | Frecuencia de oscilación: <b>ω_cp = ${kStability.w_pc.toFixed(3)} rad/s</b></p>` : ''}
+      </div>
+
+      <div style="text-align:center; margin:8px 0;">
+        <button id="btnOpenTableInline" class="btn-primary" style="font-size:11px; padding:6px 12px; background:#059669;">📋 Ver Tabulación de Puntos para Dibujo</button>
+      </div>
+
+      <div style="background:#171728; padding:8px; border-radius:6px; margin-bottom:6px;">
         <p><b>Balance de Polos según Cauchy:</b></p>
         <div style="text-align:center; margin:4px 0;">
           ${renderTex(`Z = N + P = ${N} + ${P} = ${Z}`, true)}
@@ -1071,6 +1113,15 @@ function renderNyquistPlot() {
 
   explanationTitle.textContent = title;
   explanationBody.innerHTML = cleanMath(desc);
+
+  // Hook up inline tabulation button if present in the card
+  const btnInline = document.getElementById('btnOpenTableInline');
+  if (btnInline) {
+    btnInline.addEventListener('click', () => {
+      populateNyquistTableModal();
+      modalNyquistTable.classList.remove('hidden');
+    });
+  }
 
   // Viewport inteligente enfocado en el rango relevante para evitar aplanamiento
   const layout = {
@@ -1868,6 +1919,78 @@ function populateFullSolutionModal() {
   solutionModalContent.innerHTML = cleanMath(html);
 }
 
+// Población del Modal de Tabulación de Puntos de Nyquist
+function populateNyquistTableModal() {
+  if (!state.parsedTF) return;
+  const num = state.parsedTF.num;
+  const den = state.parsedTF.den;
+  const table = getNyquistTabulation(num, den, state.margins);
+  const kStability = calculateKStabilityRange(num, den, state.margins);
+
+  let html = `
+    <div class="sol-section">
+      <h3>📋 Tabulación de Puntos Notables de Nyquist</h3>
+      <p>Puntos de evaluación de la respuesta frecuencial <b>G(jω)</b> para trazar la curva en el plano polar:</p>
+      
+      <div style="overflow-x:auto; margin:8px 0;">
+        <table class="sol-table">
+          <thead>
+            <tr>
+              <th>Frecuencia ω (rad/s)</th>
+              <th>|G(jω)|</th>
+              <th>|G(jω)| (dB)</th>
+              <th>Parte Real (Re)</th>
+              <th>Parte Imag (Im)</th>
+              <th>Fase ∠G (°)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${table.map(row => {
+              const isGainCross = state.margins && state.margins.w_gc && Math.abs(row.w - state.margins.w_gc) < 0.01;
+              const isPhaseCross = state.margins && state.margins.w_pc && Math.abs(row.w - state.margins.w_pc) < 0.01;
+              let rowStyle = "";
+              let badge = "";
+              if (isGainCross) {
+                rowStyle = "background-color: rgba(56, 189, 248, 0.15); font-weight: bold;";
+                badge = " <span style='color:#38bdf8;'>[ω_cg]</span>";
+              } else if (isPhaseCross) {
+                rowStyle = "background-color: rgba(245, 158, 11, 0.15); font-weight: bold;";
+                badge = " <span style='color:#f59e0b;'>[ω_cp]</span>";
+              }
+              return `
+                <tr style="${rowStyle}">
+                  <td><b>${row.w < 0.01 || row.w >= 100 ? row.w.toExponential(2) : row.w.toFixed(3)}</b>${badge}</td>
+                  <td>${row.mag < 0.01 || row.mag >= 100 ? row.mag.toExponential(2) : row.mag.toFixed(3)}</td>
+                  <td>${row.magDb.toFixed(2)} dB</td>
+                  <td style="color:${row.re < 0 ? '#f87171' : '#4ade80'};">${row.re.toFixed(4)}</td>
+                  <td style="color:${row.im < 0 ? '#38bdf8' : '#fb923c'};">${row.im.toFixed(4)}</td>
+                  <td>${row.phaseDeg.toFixed(1)}°</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pedagogy-tip">
+        <b>🎯 Cómo trazar a mano en exámenes universitarios:</b><br>
+        1. Comienza en <b>ω → 0⁺</b> identificando el tipo de sistema (cuadrante de partida según polos en el origen).<br>
+        2. Localiza el cruce con el eje real negativo <b>(ω = ω_cp)</b> donde Im = 0. En este sistema: <b>Re = ${state.margins && state.margins.w_pc ? (state.margins.GM !== null ? (-Math.pow(10, -state.margins.GM / 20)).toFixed(4) : '—') : 'No cruza'}</b>.<br>
+        3. Localiza el cruce con el círculo unitario <b>(ω = ω_cg)</b> donde |G| = 1.0 (0 dB).<br>
+        4. Une los puntos suavemente en sentido horario hacia el origen (0, 0) cuando <b>ω → ∞</b> con ángulo asintótico de -${90 * (state.bodeComps ? state.bodeComps.originPoles + state.bodeComps.realPoles.length - state.bodeComps.realZeros.length : 1)}°.
+      </div>
+
+      <div style="background:#171728; padding:8px; border-radius:6px; margin-top:8px;">
+        <h4 style="color:#ffd700; margin-bottom:4px;">⚖️ Rango de Estabilidad Crítica para Ganancia K:</h4>
+        <p>• Rango permitido: <b style="color:#4ade80; font-size:14px;">${kStability.kRangeStr}</b></p>
+        <p style="color:#cbd5e1; font-size:11px; margin-top:4px;">${kStability.verdict}</p>
+      </div>
+    </div>
+  `;
+
+  nyquistTableContent.innerHTML = cleanMath(html);
+}
+
 // Alternar Modo Mover con el dedo (Pan)
 btnModePan.addEventListener('click', () => {
   currentDragMode = 'pan';
@@ -1886,6 +2009,32 @@ btnModeZoom.addEventListener('click', () => {
   Plotly.relayout(plotContainer, { dragmode: 'zoom' });
 });
 
+// Pantalla Completa (Full screen Mode)
+btnFullscreen.addEventListener('click', () => {
+  state.isFullscreen = !state.isFullscreen;
+  if (state.isFullscreen) {
+    document.body.classList.add('fullscreen-mode');
+    btnFullscreen.textContent = '✖ Salir';
+    darkLayoutCommon.dragmode = currentDragMode || 'pan';
+  } else {
+    document.body.classList.remove('fullscreen-mode');
+    btnFullscreen.textContent = '⛶ Pantalla';
+    darkLayoutCommon.dragmode = false;
+  }
+  Plotly.relayout(plotContainer, { dragmode: darkLayoutCommon.dragmode });
+  Plotly.Plots.resize(plotContainer);
+});
+
+// Auto redimensionar gráficos en rotación y cambio de ventana
+window.addEventListener('resize', () => {
+  if (plotContainer) Plotly.Plots.resize(plotContainer);
+});
+window.addEventListener('orientationchange', () => {
+  setTimeout(() => {
+    if (plotContainer) Plotly.Plots.resize(plotContainer);
+  }, 200);
+});
+
 // Modal de Solución Completa
 btnFullSolution.addEventListener('click', () => {
   if (!state.parsedTF) return;
@@ -1900,6 +2049,27 @@ btnCloseSolution.addEventListener('click', () => {
 btnDismissSolution.addEventListener('click', () => {
   modalSolution.classList.add('hidden');
 });
+
+// Modal de Tabulación Nyquist
+if (btnNyquistTable) {
+  btnNyquistTable.addEventListener('click', () => {
+    if (!state.parsedTF) return;
+    populateNyquistTableModal();
+    modalNyquistTable.classList.remove('hidden');
+  });
+}
+
+if (btnCloseNyquistTable) {
+  btnCloseNyquistTable.addEventListener('click', () => {
+    modalNyquistTable.classList.add('hidden');
+  });
+}
+
+if (btnDismissNyquistTable) {
+  btnDismissNyquistTable.addEventListener('click', () => {
+    modalNyquistTable.classList.add('hidden');
+  });
+}
 
 // Reset Vista
 btnResetView.addEventListener('click', () => {
@@ -1959,26 +2129,56 @@ exampleSelect.addEventListener('change', (e) => {
   }
 });
 
-// Teclado virtual
+// Teclado virtual con soporte para navegación por cursor y manipulación exacta
 btnToggleKeypad.addEventListener('click', () => {
   virtualKeypad.classList.toggle('hidden');
 });
 
 document.querySelectorAll('.key-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
     const key = btn.getAttribute('data-key');
-    if (key === 'clear') {
-      tfInput.value = '';
+    const input = tfInput;
+    let start = input.selectionStart ?? input.value.length;
+    let end = input.selectionEnd ?? input.value.length;
+    const val = input.value;
+
+    if (key === 'left') {
+      const newPos = Math.max(0, start - 1);
+      input.focus();
+      input.setSelectionRange(newPos, newPos);
+    } else if (key === 'right') {
+      const newPos = Math.min(val.length, end + 1);
+      input.focus();
+      input.setSelectionRange(newPos, newPos);
+    } else if (key === 'clear') {
+      input.value = '';
+      input.focus();
+      input.setSelectionRange(0, 0);
     } else if (key === 'back') {
-      tfInput.value = tfInput.value.slice(0, -1);
-    } else if (key === 'pi') {
-      tfInput.value += 'pi';
-    } else if (key === '1/s') {
-      tfInput.value += '(1/s)';
-    } else if (key === '1/s^2') {
-      tfInput.value += '(1/s^2)';
+      if (start === end) {
+        if (start > 0) {
+          input.value = val.slice(0, start - 1) + val.slice(start);
+          input.focus();
+          input.setSelectionRange(start - 1, start - 1);
+        }
+      } else {
+        input.value = val.slice(0, start) + val.slice(end);
+        input.focus();
+        input.setSelectionRange(start, start);
+      }
     } else {
-      tfInput.value += key;
+      let insertStr = key;
+      if (key === 'pi') insertStr = 'pi';
+      else if (key === '1/s') insertStr = '(1/s)';
+      else if (key === '1/s^2') insertStr = '(1/s^2)';
+      else if (key === '(s+') insertStr = '(s+';
+      else if (key === '(s+1)') insertStr = '(s+1)';
+
+      input.value = val.slice(0, start) + insertStr + val.slice(end);
+      const nextPos = start + insertStr.length;
+      input.focus();
+      input.setSelectionRange(nextPos, nextPos);
     }
   });
 });

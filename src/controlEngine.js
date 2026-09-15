@@ -23,6 +23,46 @@ export function polyAdd(p1, p2) {
     return res;
 }
 
+export function polySub(p1, p2) {
+    const negP2 = p2.map(c => -c);
+    return polyAdd(p1, negP2);
+}
+
+export function polyPow(p, n) {
+    if (n === 0) return [1];
+    let res = [...p];
+    for (let i = 1; i < n; i++) res = polyMultiply(res, p);
+    return res;
+}
+
+export function cleanPoly(p) {
+    let res = [...p];
+    while (res.length > 1 && Math.abs(res[0]) < 1e-12) res.shift();
+    return res;
+}
+
+export function formatPoly(poly) {
+    if (!poly || poly.length === 0) return "0";
+    const deg = poly.length - 1;
+    let s = "";
+    for (let i = 0; i <= deg; i++) {
+        const c = poly[i];
+        if (Math.abs(c) < 1e-9) continue;
+        const p = deg - i;
+        const sign = c < 0 ? "-" : (s.length > 0 ? "+" : "");
+        const absC = Math.abs(c);
+        let cStr = (absC === 1 && p > 0) ? "" : (Math.abs(absC - Math.round(absC)) < 1e-4 ? Math.round(absC).toString() : absC.toFixed(2));
+        let pStr = p === 0 ? "" : (p === 1 ? "s" : `s^${p}`);
+        let term = (cStr === "" && pStr !== "") ? pStr : `${cStr}${pStr}`;
+        if (s.length === 0) {
+            s += (c < 0 ? `-${term}` : term);
+        } else {
+            s += ` ${sign} ${term}`;
+        }
+    }
+    return s || "0";
+}
+
 export function polyEvalComplex(p, re, im) {
     let resRe = 0;
     let resIm = 0;
@@ -118,108 +158,336 @@ export function findRoots(poly) {
 }
 
 /**
- * Parser de funciones de transferencia clásicas
- * Soporta formatos:
- * "10/(s*(s+2)*(s+4))", "1/(s+1)", "10/(s^2+2*s+10)", "(s-2)/((s+1)*(s+3))"
+ * Parser matemático robusto de funciones racionales complejas
+ * Soporta:
+ * - Parámetro de ganancia 'k' o 'K'
+ * - Divisiones anidadas: '(s/2)', encadenadas: '10/(s/2)/(s+1)'
+ * - Multiplicación implícita con paréntesis: 'k/(s/2)((s+1)^2)', '2s(s+1)'
+ * - Potencias: '(s+1)^2', 's^3'
  */
 export function parseTransferFunction(str) {
+    if (!str || !str.trim()) {
+        throw new Error("Por favor ingresa una función de transferencia.");
+    }
     let clean = str.replace(/\s+/g, '');
-    let parts = clean.split('/');
-    if (parts.length > 2) {
-        throw new Error("Formato inválido: sólo se permite una barra '/' principal.");
-    }
-    let numStr = parts[0] || "1";
-    let denStr = parts[1] || "1";
-
-    function parsePolynomial(expr) {
-        expr = expr.replace(/^\((.*)\)$/, '$1'); // quitar parentesis envolventes si existen
-        
-        // Multiplicación de factores tipo (s+a)*(s+b) o s*(s+2)
-        // Detectar si contiene factores multiplicados con '*'
-        let factors = [];
-        let curr = '';
-        let depth = 0;
-        for (let i = 0; i < expr.length; i++) {
-            const ch = expr[i];
-            if (ch === '(') depth++;
-            else if (ch === ')') depth--;
-            if (ch === '*' && depth === 0) {
-                factors.push(curr);
-                curr = '';
-            } else {
-                curr += ch;
+    let hasK = false;
+    
+    // Tokenizador
+    let tokens = [];
+    let i = 0;
+    while (i < clean.length) {
+        let ch = clean[i];
+        if (ch === 'p' && clean.substr(i, 2).toLowerCase() === 'pi') {
+            tokens.push({ type: 'NUM', val: Math.PI });
+            i += 2;
+            continue;
+        }
+        if (ch === 's' || ch === 'S') {
+            tokens.push({ type: 'VAR_S' });
+            i++;
+            continue;
+        }
+        if (ch === 'k' || ch === 'K') {
+            hasK = true;
+            tokens.push({ type: 'VAR_K' });
+            i++;
+            continue;
+        }
+        if (ch === 'j' || ch === 'J') {
+            // Ignorar j unitario si se escribe jw o j*s
+            i++;
+            continue;
+        }
+        if (/[0-9.]/.test(ch)) {
+            let numStr = '';
+            while (i < clean.length && /[0-9.]/.test(clean[i])) {
+                numStr += clean[i];
+                i++;
             }
+            tokens.push({ type: 'NUM', val: parseFloat(numStr) });
+            continue;
         }
-        if (curr) factors.push(curr);
-
-        if (factors.length > 1) {
-            let resPoly = [1];
-            for (let f of factors) {
-                resPoly = polyMultiply(resPoly, parsePolynomial(f));
-            }
-            return resPoly;
+        if ('+-*/^()'.includes(ch)) {
+            tokens.push({ type: 'OP', val: ch });
+            i++;
+            continue;
         }
-
-        // Si es un término simple o suma de términos como s^2+2*s+10 o s+2 o 10 o s
-        let sExpr = factors[0].replace(/^\((.*)\)$/, '$1');
-        
-        // Si es simplemente un número
-        if (!sExpr.includes('s')) {
-            let val = parseFloat(sExpr);
-            return [isNaN(val) ? 1 : val];
-        }
-        
-        // Si es s^n
-        if (sExpr === 's') return [1, 0];
-        if (sExpr === 's^2') return [1, 0, 0];
-        if (sExpr === 's^3') return [1, 0, 0, 0];
-
-        // Parseador general de términos polinomiales: a*s^n + b*s + c
-        sExpr = sExpr.replace(/-/g, '+-');
-        let terms = sExpr.split('+').filter(t => t.length > 0);
-        let maxDeg = 0;
-        let termMap = {};
-
-        for (let t of terms) {
-            t = t.trim();
-            if (!t) continue;
-            let deg = 0;
-            let coeff = 1;
-
-            if (t.includes('s')) {
-                if (t.includes('s^')) {
-                    let p = t.split('s^');
-                    deg = parseInt(p[1]);
-                    let cStr = p[0].replace('*', '');
-                    if (cStr === '' || cStr === '+') coeff = 1;
-                    else if (cStr === '-') coeff = -1;
-                    else coeff = parseFloat(cStr);
-                } else {
-                    deg = 1;
-                    let cStr = t.replace('*s', '').replace('s', '');
-                    if (cStr === '' || cStr === '+') coeff = 1;
-                    else if (cStr === '-') coeff = -1;
-                    else coeff = parseFloat(cStr);
-                }
-            } else {
-                deg = 0;
-                coeff = parseFloat(t);
-            }
-            if (isNaN(coeff)) coeff = 0;
-            if (deg > maxDeg) maxDeg = deg;
-            termMap[deg] = (termMap[deg] || 0) + coeff;
-        }
-
-        let poly = [];
-        for (let d = maxDeg; d >= 0; d--) {
-            poly.push(termMap[d] || 0);
-        }
-        return poly.length > 0 ? poly : [1];
+        i++;
     }
 
-    const num = parsePolynomial(numStr);
-    const den = parsePolynomial(denStr);
-    return { num, den, numStr, denStr };
+    if (tokens.length === 0) {
+        throw new Error("No se detectaron términos matemáticos válidos.");
+    }
+    
+    // Insertar operador de yuxtaposición '#' con mayor precedencia que '/'
+    let expanded = [];
+    for (let idx = 0; idx < tokens.length; idx++) {
+        let curr = tokens[idx];
+        expanded.push(curr);
+        if (idx < tokens.length - 1) {
+            let next = tokens[idx + 1];
+            let isCurrOperand = (curr.type === 'NUM' || curr.type === 'VAR_S' || curr.type === 'VAR_K' || (curr.type === 'OP' && curr.val === ')'));
+            let isNextOperand = (next.type === 'NUM' || next.type === 'VAR_S' || next.type === 'VAR_K' || (next.type === 'OP' && next.val === '('));
+            if (isCurrOperand && isNextOperand) {
+                expanded.push({ type: 'OP', val: '#' });
+            }
+        }
+    }
+
+    let pos = 0;
+    function peek() { return pos < expanded.length ? expanded[pos] : null; }
+    function consume() { return expanded[pos++]; }
+
+    function parseExpr() {
+        let left = parseTerm();
+        while (pos < expanded.length && peek() && peek().type === 'OP' && (peek().val === '+' || peek().val === '-')) {
+            let op = consume().val;
+            let right = parseTerm();
+            if (op === '+') {
+                left = {
+                    num: polyAdd(polyMultiply(left.num, right.den), polyMultiply(right.num, left.den)),
+                    den: polyMultiply(left.den, right.den)
+                };
+            } else {
+                left = {
+                    num: polySub(polyMultiply(left.num, right.den), polyMultiply(right.num, left.den)),
+                    den: polyMultiply(left.den, right.den)
+                };
+            }
+        }
+        return left;
+    }
+
+    function parseTerm() {
+        let left = parseJuxtaposition();
+        while (pos < expanded.length && peek() && peek().type === 'OP' && (peek().val === '*' || peek().val === '/')) {
+            let op = consume().val;
+            let right = parseJuxtaposition();
+            if (op === '*') {
+                left = {
+                    num: polyMultiply(left.num, right.num),
+                    den: polyMultiply(left.den, right.den)
+                };
+            } else {
+                left = {
+                    num: polyMultiply(left.num, right.den),
+                    den: polyMultiply(left.den, right.num)
+                };
+            }
+        }
+        return left;
+    }
+
+    function parseJuxtaposition() {
+        let left = parsePower();
+        while (pos < expanded.length && peek() && peek().type === 'OP' && peek().val === '#') {
+            consume();
+            let right = parsePower();
+            left = {
+                num: polyMultiply(left.num, right.num),
+                den: polyMultiply(left.den, right.den)
+            };
+        }
+        return left;
+    }
+
+    function parsePower() {
+        let base = parseFactor();
+        if (pos < expanded.length && peek() && peek().type === 'OP' && peek().val === '^') {
+            consume();
+            let p = parseFactor();
+            let powerVal = Math.round(p.num[0] / (p.den[0] || 1));
+            if (powerVal >= 0 && isFinite(powerVal)) {
+                base = {
+                    num: polyPow(base.num, powerVal),
+                    den: polyPow(base.den, powerVal)
+                };
+            }
+        }
+        return base;
+    }
+
+    function parseFactor() {
+        if (pos >= expanded.length) return { num: [1], den: [1] };
+        let tok = peek();
+        if (!tok) return { num: [1], den: [1] };
+
+        if (tok.type === 'OP' && tok.val === '+') {
+            consume();
+            return parseFactor();
+        }
+        if (tok.type === 'OP' && tok.val === '-') {
+            consume();
+            let factor = parseFactor();
+            return { num: factor.num.map(c => -c), den: factor.den };
+        }
+        if (tok.type === 'OP' && tok.val === '(') {
+            consume();
+            let expr = parseExpr();
+            if (pos < expanded.length && peek() && peek().type === 'OP' && peek().val === ')') {
+                consume();
+            }
+            return expr;
+        }
+        if (tok.type === 'NUM') {
+            consume();
+            return { num: [tok.val], den: [1] };
+        }
+        if (tok.type === 'VAR_S') {
+            consume();
+            return { num: [1, 0], den: [1] };
+        }
+        if (tok.type === 'VAR_K') {
+            consume();
+            return { num: [1], den: [1] }; // Base de evaluación numérica K=1
+        }
+        consume();
+        return { num: [1], den: [1] };
+    }
+
+    let rat = parseExpr();
+    let num = cleanPoly(rat.num);
+    let den = cleanPoly(rat.den);
+
+    // Normalizar para que el coeficiente principal del denominador sea positivo
+    if (den.length > 0 && den[0] < 0) {
+        den = den.map(c => -c);
+        num = num.map(c => -c);
+    }
+
+    const numStr = formatPoly(num);
+    const denStr = formatPoly(den);
+
+    return {
+        num,
+        den,
+        numStr,
+        denStr,
+        hasK,
+        rawStr: str
+    };
+}
+
+/**
+ * Cálculo del Rango de Estabilidad Crítica para ganancia K (Nyquist y Routh)
+ */
+export function calculateKStabilityRange(num, den, margins) {
+    const denRoots = findRoots(den);
+    const P = denRoots.filter(r => r.re > 1e-4).length;
+    const originPoles = denRoots.filter(r => Math.hypot(r.re, r.im) < 1e-4).length;
+    
+    const w_pc = margins ? margins.w_pc : null;
+    const GM = margins ? margins.GM : null; // en dB
+    
+    let kCrit = null;
+    let kRangeStr = "";
+    let verdict = "";
+    let isStableBase = false;
+    
+    if (GM !== null && isFinite(GM) && w_pc && w_pc > 0) {
+        kCrit = Math.pow(10, GM / 20);
+    }
+    
+    if (originPoles >= 2 && P === 0 && (!num || num.length <= 1)) {
+        kRangeStr = "Inestable para todo K > 0";
+        verdict = "El lazo cerrado es inestable para cualquier valor de K > 0 debido al integrador de orden 2 sin ceros de adelanto estabilizadores (Z = 2).";
+        isStableBase = false;
+    } else if (P === 0) {
+        if (kCrit !== null && kCrit > 0) {
+            kRangeStr = `0 < K < ${kCrit.toFixed(3)}`;
+            verdict = `Para asegurar estabilidad en lazo cerrado (Z = 0), la ganancia debe cumplir 0 < K < ${kCrit.toFixed(3)}. En K_crit = ${kCrit.toFixed(3)}, el sistema oscila sostenidamente con frecuencia ω = ${w_pc.toFixed(3)} rad/s.`;
+            isStableBase = (1.0 < kCrit);
+        } else {
+            kRangeStr = "0 < K < ∞ (Estable para todo K > 0)";
+            verdict = "La curva polar no cruza el semieje real negativo; el lazo cerrado es asintóticamente estable para cualquier valor de ganancia K > 0.";
+            isStableBase = true;
+        }
+    } else {
+        if (kCrit !== null && kCrit > 0) {
+            kRangeStr = `K > ${kCrit.toFixed(3)}`;
+            verdict = `La planta tiene P = ${P} polo(s) inestable(s). Para estabilizarla mediante N = -${P} rodeos antihorarios al punto crítico, la ganancia debe ser K > ${kCrit.toFixed(3)}.`;
+            isStableBase = (1.0 > kCrit);
+        } else {
+            kRangeStr = "Inestable para todo K > 0";
+            verdict = `El sistema en lazo abierto posee P = ${P} polo(s) inestable(s) y el trazo polar no logra rodear antihorariamente el punto crítico -1+j0.`;
+            isStableBase = false;
+        }
+    }
+    
+    return {
+        P,
+        originPoles,
+        w_pc,
+        kCrit,
+        kRangeStr,
+        verdict,
+        isStableBase
+    };
+}
+
+/**
+ * Tabla interactiva de tabulación de puntos de Nyquist para exámenes universitarios
+ */
+export function getNyquistTabulation(num, den, margins) {
+    const table = [];
+    const w_gc = margins ? margins.w_gc : null;
+    const w_pc = margins ? margins.w_pc : null;
+
+    const candidates = [
+        { w: 0.001, label: "ω → 0⁺ (Baja frecuencia)" },
+        { w: 0.05,  label: "ω = 0.05 rad/s" },
+        { w: 0.1,   label: "ω = 0.1 rad/s" },
+        { w: 0.5,   label: "ω = 0.5 rad/s" },
+        { w: 1.0,   label: "ω = 1.0 rad/s" },
+        { w: 2.0,   label: "ω = 2.0 rad/s" },
+        { w: 5.0,   label: "ω = 5.0 rad/s" },
+        { w: 10.0,  label: "ω = 10 rad/s" },
+        { w: 50.0,  label: "ω = 50 rad/s" },
+        { w: 500.0, label: "ω → ∞ (Alta frecuencia)" }
+    ];
+
+    if (w_gc && w_gc > 0.001 && w_gc < 500) {
+        candidates.push({ w: w_gc, label: `ω_cg = ${w_gc.toFixed(3)} rad/s (Cruce Ganancia 0 dB)` });
+    }
+    if (w_pc && w_pc > 0.001 && w_pc < 500) {
+        candidates.push({ w: w_pc, label: `ω_cp = ${w_pc.toFixed(3)} rad/s (Cruce Fase -180°)` });
+    }
+
+    candidates.sort((a, b) => a.w - b.w);
+
+    const filtered = [];
+    for (let c of candidates) {
+        if (filtered.length === 0 || Math.abs(c.w - filtered[filtered.length - 1].w) / c.w > 0.04) {
+            filtered.push(c);
+        }
+    }
+
+    for (let item of filtered) {
+        const w = item.w;
+        const numEval = polyEvalComplex(num, 0, w);
+        const denEval = polyEvalComplex(den, 0, w);
+        const denMag2 = denEval.re * denEval.re + denEval.im * denEval.im;
+
+        let re = 0, im = 0, mag = 0, magDb = -120, phaseDeg = 0;
+        if (denMag2 > 1e-24) {
+            re = (numEval.re * denEval.re + numEval.im * denEval.im) / denMag2;
+            im = (numEval.im * denEval.re - numEval.re * denEval.im) / denMag2;
+            mag = Math.hypot(re, im);
+            magDb = 20 * Math.log10(Math.max(mag, 1e-12));
+            phaseDeg = Math.atan2(im, re) * (180 / Math.PI);
+        }
+        table.push({
+            w,
+            wLabel: item.label,
+            mag,
+            magDb,
+            re,
+            im,
+            phaseDeg
+        });
+    }
+
+    return table;
 }
 
 /**
