@@ -8,10 +8,13 @@ import {
   calculateMargins,
   simulateStepResponse,
   findRoots,
+  poleStatus,
+  closedLoopInfo,
   designCompensator,
   getBodeComponents,
   polyAdd,
   polyMultiply,
+  frequencyGrid,
   calculateKStabilityRange,
   getNyquistTabulation,
   formatPoly
@@ -232,14 +235,25 @@ function analyzeSystem() {
 
   try {
     state.parsedTF = parseTransferFunction(str);
+    // 1. Márgenes exactos analíticos
+    state.margins = calculateMargins(state.parsedTF.num, state.parsedTF.den);
+    // 2. Malla frecuencial adaptativa a polos, ceros y cruces
+    state.wList = frequencyGrid(state.parsedTF.num, state.parsedTF.den, state.margins);
+    // 3. Descomposición canónica de Bode con soporte RHP
     state.bodeComps = getBodeComponents(state.parsedTF.num, state.parsedTF.den, state.wList);
+    // 4. Respuesta en frecuencia continua sin saltos de fase
     state.freqResp = evaluateFreqResponse(state.parsedTF.num, state.parsedTF.den, state.wList);
-    state.margins = calculateMargins(state.wList, state.freqResp.mag, state.freqResp.phase);
+    // 5. Respuesta temporal al escalón con métricas exactas
     state.stepRespOrig = simulateStepResponse(state.parsedTF.num, state.parsedTF.den);
     
-    // Auto diseñar un compensador base si no existe
-    state.compResult = designCompensator('Lead-Lag', state.parsedTF.num, state.parsedTF.den, 45);
-    state.stepRespComp = simulateStepResponse(state.compResult.totalNum, state.compResult.totalDen);
+    // Auto diseñar un compensador base si la planta lo permite
+    try {
+      state.compResult = designCompensator('Lead-Lag', state.parsedTF.num, state.parsedTF.den, 45);
+      state.stepRespComp = simulateStepResponse(state.compResult.totalNum, state.compResult.totalDen);
+    } catch (e) {
+      state.compResult = null;
+      state.stepRespComp = null;
+    }
 
     state.step = 0;
     renderCurrentTab();
@@ -898,11 +912,10 @@ function renderNyquistPlot() {
     marker: { color: '#ef4444', size: 12, symbol: 'x', line: { width: 3 } }
   });
 
-  const denRoots = findRoots(state.parsedTF.den);
-  const P = denRoots.filter(r => r.re > 1e-5).length;
   const kStability = calculateKStabilityRange(state.parsedTF.num, state.parsedTF.den, state.margins);
-  const N = 0; // Conteo neto de rodeos horarios para sistemas de fase mínima estables
-  const Z = N + P;
+  const P = kStability.P;
+  const Z = kStability.Z;
+  const N = kStability.N !== null ? kStability.N : (Z - P);
   const metrics = getControlMetrics();
 
   if (state.step === 0) {
@@ -1266,22 +1279,52 @@ function renderLocusPlot() {
     });
   }
 
-  // Simulación de ramas para K variante
+  // Simulación de ramas para K variante con emparejamiento continuo de raíces
   const kVals = [];
-  for (let exp = -2; exp <= 4; exp += 0.05) kVals.push(Math.pow(10, exp));
+  for (let exp = -2; exp <= 4; exp += 0.04) kVals.push(Math.pow(10, exp));
 
   const branchesX = Array.from({ length: poles.length }, () => []);
   const branchesY = Array.from({ length: poles.length }, () => []);
 
+  let prevRoots = null;
   for (let K of kVals) {
     const kNum = state.parsedTF.num.map(c => c * K);
     const clPoly = polyAdd(state.parsedTF.den, kNum);
-    const clRoots = findRoots(clPoly);
+    let clRoots = findRoots(clPoly);
 
-    for (let i = 0; i < poles.length; i++) {
-      if (clRoots[i]) {
-        branchesX[i].push(clRoots[i].re);
-        branchesY[i].push(clRoots[i].im);
+    if (clRoots.length === poles.length) {
+      if (prevRoots) {
+        // Emparejamiento por distancia mínima euclídea para evitar saltos entre ramas
+        const matched = new Array(poles.length);
+        const used = new Array(poles.length).fill(false);
+        for (let i = 0; i < poles.length; i++) {
+          let bestJ = -1;
+          let minD = Infinity;
+          for (let j = 0; j < poles.length; j++) {
+            if (!used[j]) {
+              const d = Math.hypot(clRoots[j].re - prevRoots[i].re, clRoots[j].im - prevRoots[i].im);
+              if (d < minD) {
+                minD = d;
+                bestJ = j;
+              }
+            }
+          }
+          if (bestJ !== -1) {
+            used[bestJ] = true;
+            matched[i] = clRoots[bestJ];
+          } else {
+            matched[i] = clRoots[i];
+          }
+        }
+        clRoots = matched;
+      }
+      prevRoots = clRoots;
+
+      for (let i = 0; i < poles.length; i++) {
+        if (clRoots[i]) {
+          branchesX[i].push(clRoots[i].re);
+          branchesY[i].push(clRoots[i].im);
+        }
       }
     }
   }
@@ -1635,22 +1678,41 @@ function renderStepPlot() {
   const mc = comp ? comp.metrics : null;
 
   explanationTitle.textContent = "Respuesta Temporal al Escalón Unitario";
-  let bodyHtml = `
-    <div style="background:#171728; padding:8px; border-radius:6px; margin-bottom:8px;">
-      <p><b>Original:</b> Tr = ${mo.tr ? mo.tr.toFixed(3) + 's' : 'N/A'} | Ts(2%) = ${mo.ts ? mo.ts.toFixed(3) + 's' : 'N/A'} | Mp = ${mo.mpPercent.toFixed(1)}% | Ess = ${mo.ess.toFixed(3)}</p>
-    </div>
-  `;
-  if (mc) {
+  let bodyHtml = "";
+
+  if (mo.isUnstable || mo.status !== 'estable') {
     bodyHtml += `
-      <div style="background:#171728; padding:8px; border-radius:6px; margin-bottom:8px;">
-        <p><b>Compensado:</b> Tr = ${mc.tr ? mc.tr.toFixed(3) + 's' : 'N/A'} | Ts(2%) = ${mc.ts ? mc.ts.toFixed(3) + 's' : 'N/A'} | Mp = ${mc.mpPercent.toFixed(1)}% | Ess = ${mc.ess.toFixed(3)}</p>
-      </div>
-      <div style="line-height:1.5;">
-        ${mc.ts < mo.ts ? '✅ <b>Mayor rapidez:</b> Redujo el tiempo de establecimiento.<br/>' : ''}
-        ${mc.mpPercent < mo.mpPercent ? '✅ <b>Mayor estabilidad:</b> Redujo las oscilaciones y el sobreimpulso.<br/>' : ''}
-        ${mc.ess < mo.ess ? '✅ <b>Mayor precisión:</b> Menor error estacionario.' : ''}
+      <div style="background:#2d1515; border:1px solid #ef4444; padding:8px; border-radius:6px; margin-bottom:8px;">
+        <p style="color:#f87171;">⚠️ <b>Lazo Cerrado Inestable (${mo.status}):</b> El sistema posee polos en el semiplano derecho o sobre el eje jω. Sin estabilidad asintótica no se reportan Yss, Ess, Tr, Ts ni sobreimpulso estacionario.</p>
       </div>
     `;
+  } else {
+    bodyHtml += `
+      <div style="background:#171728; padding:8px; border-radius:6px; margin-bottom:8px;">
+        <p><b>Original:</b> Yss = ${mo.yss.toFixed(3)} | Ess = ${mo.ess.toFixed(3)} | Tr = ${mo.tr ? mo.tr.toFixed(3) + 's' : 'N/A'} | Ts(2%) = ${mo.ts ? mo.ts.toFixed(3) + 's' : 'N/A'} | Mp = ${mo.mpPercent.toFixed(1)}%</p>
+      </div>
+    `;
+  }
+
+  if (mc) {
+    if (mc.isUnstable || mc.status !== 'estable') {
+      bodyHtml += `
+        <div style="background:#2d1515; border:1px solid #ef4444; padding:8px; border-radius:6px; margin-bottom:8px;">
+          <p style="color:#f87171;">⚠️ <b>Compensado Inestable:</b> El lazo con compensador no logró estabilidad asintótica.</p>
+        </div>
+      `;
+    } else {
+      bodyHtml += `
+        <div style="background:#171728; padding:8px; border-radius:6px; margin-bottom:8px;">
+          <p><b>Compensado:</b> Yss = ${mc.yss.toFixed(3)} | Ess = ${mc.ess.toFixed(3)} | Tr = ${mc.tr ? mc.tr.toFixed(3) + 's' : 'N/A'} | Ts(2%) = ${mc.ts ? mc.ts.toFixed(3) + 's' : 'N/A'} | Mp = ${mc.mpPercent.toFixed(1)}%</p>
+        </div>
+        <div style="line-height:1.5;">
+          ${!mo.isUnstable && mc.ts < mo.ts ? '✅ <b>Mayor rapidez:</b> Redujo el tiempo de establecimiento.<br/>' : ''}
+          ${!mo.isUnstable && mc.mpPercent < mo.mpPercent ? '✅ <b>Mayor estabilidad:</b> Redujo las oscilaciones y el sobreimpulso.<br/>' : ''}
+          ${!mo.isUnstable && mc.ess < mo.ess ? '✅ <b>Mayor precisión:</b> Menor error estacionario.' : ''}
+        </div>
+      `;
+    }
   }
   explanationBody.innerHTML = cleanMath(bodyHtml);
 
@@ -1695,7 +1757,8 @@ function populateFullSolutionModal() {
   const intervals = state.bodeComps ? state.bodeComps.intervals : [];
   const metrics = getControlMetrics();
 
-  const isStable = (margins.PM === null || margins.PM > 0) && (margins.GM === null || margins.GM > 0);
+  const clInfo = closedLoopInfo(num, den);
+  const isStable = clInfo.status === 'estable';
 
   let html = `
     <!-- 1. Modelo Matemático y Raíces -->
