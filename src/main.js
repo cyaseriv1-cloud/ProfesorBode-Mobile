@@ -17,12 +17,14 @@ import {
   frequencyGrid,
   calculateKStabilityRange,
   getNyquistTabulation,
-  formatPoly
+  formatPoly,
+  getNicholsGrid,
+  getClosedLoopReading
 } from './controlEngine.js';
 
 // Estado global de la aplicación
 const state = {
-  currentTab: 'bode', // 'bode', 'nyquist', 'locus', 'compensator', 'step'
+  currentTab: 'bode', // 'bode', 'nyquist', 'nichols', 'locus', 'compensator', 'step'
   step: 0,
   maxSteps: 4,
   tfStr: '10/(s*(s+2)*(s+4))',
@@ -266,10 +268,14 @@ function analyzeSystem() {
 function renderCurrentTab() {
   if (!state.parsedTF) return;
 
-  // Actualizar visibilidad de herramientas exclusivas de Nyquist
-  if (state.currentTab === 'nyquist') {
+  // Actualizar visibilidad de herramientas de punto crítico
+  if (state.currentTab === 'nyquist' || state.currentTab === 'nichols') {
     btnFocusCrit.classList.remove('hidden');
-    if (btnNyquistTable) btnNyquistTable.classList.remove('hidden');
+    btnFocusCrit.textContent = state.currentTab === 'nichols' ? "🎯 Centrar en (-180°, 0 dB)" : "🎯 Centrar en -1";
+    if (btnNyquistTable) {
+      if (state.currentTab === 'nyquist') btnNyquistTable.classList.remove('hidden');
+      else btnNyquistTable.classList.add('hidden');
+    }
   } else {
     btnFocusCrit.classList.add('hidden');
     if (btnNyquistTable) btnNyquistTable.classList.add('hidden');
@@ -300,6 +306,9 @@ function renderCurrentTab() {
       break;
     case 'nyquist':
       renderNyquistPlot();
+      break;
+    case 'nichols':
+      renderNicholsPlot();
       break;
     case 'locus':
       renderLocusPlot();
@@ -1240,7 +1249,417 @@ function renderNyquistPlot() {
 }
 
 // ==========================================
-// 3. LUGAR DE LAS RAÍCES (ROOT LOCUS)
+// 3. CARTA DE NICHOLS (NICHOLS CHART)
+// ==========================================
+function renderNicholsPlot() {
+  state.maxSteps = 6;
+  stepCounter.textContent = `Paso ${state.step} de ${state.maxSteps}`;
+  btnPrevStep.disabled = state.step === 0;
+  btnNextStep.disabled = state.step === state.maxSteps;
+
+  const traces = [];
+  const m = state.margins || {};
+  const freqResp = state.freqResp;
+  const num = state.parsedTF.num;
+  const den = state.parsedTF.den;
+
+  // Rango de ejes dinámico
+  const validIndices = freqResp.mag.map((v, i) => isFinite(v) && isFinite(freqResp.phase[i]) ? i : -1).filter(i => i !== -1);
+  const phases = validIndices.map(i => freqResp.phase[i]);
+  const mags = validIndices.map(i => freqResp.mag[i]);
+
+  let xMin = phases.length > 0 ? Math.min(-360, Math.min(...phases) - 20) : -360;
+  let xMax = phases.length > 0 ? Math.max(0, Math.max(...phases) + 20) : 0;
+  let yMin = mags.length > 0 ? Math.min(-50, Math.min(...mags) - 10) : -50;
+  let yMax = mags.length > 0 ? Math.max(25, Math.max(...mags) + 10) : 25;
+
+  if (state.step >= 4) {
+    yMin = -60;
+    yMax = 40;
+  }
+
+  // 1. Línea de referencia 0 dB
+  traces.push({
+    x: [xMin, xMax],
+    y: [0, 0],
+    mode: 'lines',
+    type: 'scatter',
+    name: 'Eje 0 dB (|L|=1)',
+    line: { color: '#64748b', dash: 'dash', width: 1.2 },
+    hoverinfo: 'none',
+    showlegend: false
+  });
+
+  // 2. Líneas de referencia -180° y puntos críticos (-180° + 360°k, 0 dB)
+  const critX = [];
+  const critY = [];
+  for (let xVal = -180; xVal >= xMin - 180; xVal -= 360) {
+    if (xVal >= xMin - 50 && xVal <= xMax + 50) {
+      critX.push(xVal);
+      critY.push(0);
+      traces.push({
+        x: [xVal, xVal],
+        y: [yMin, yMax],
+        mode: 'lines',
+        type: 'scatter',
+        line: { color: '#884c54', dash: 'dot', width: 1 },
+        hoverinfo: 'none',
+        showlegend: false
+      });
+    }
+  }
+  for (let xVal = 180; xVal <= xMax + 180; xVal += 360) {
+    if (xVal >= xMin - 50 && xVal <= xMax + 50) {
+      critX.push(xVal);
+      critY.push(0);
+      traces.push({
+        x: [xVal, xVal],
+        y: [yMin, yMax],
+        mode: 'lines',
+        type: 'scatter',
+        line: { color: '#884c54', dash: 'dot', width: 1 },
+        hoverinfo: 'none',
+        showlegend: false
+      });
+    }
+  }
+
+  // Marcadores de punto crítico (-180°, 0 dB)
+  traces.push({
+    x: critX,
+    y: critY,
+    mode: 'markers+text',
+    type: 'scatter',
+    name: 'Punto Crítico (-180°, 0 dB)',
+    text: critX.map(() => '-1+j0'),
+    textposition: 'top left',
+    marker: { color: '#ef4444', size: 10, symbol: 'x', line: { width: 2.5 } }
+  });
+
+  // 3. Paso >= 4: Retícula de Magnitud M (Curvas |T| = cte en lazo cerrado)
+  const nicholsGrid = getNicholsGrid();
+  if (state.step >= 4) {
+    nicholsGrid.mCurves.forEach((curve, idx) => {
+      traces.push({
+        x: curve.x,
+        y: curve.y,
+        mode: 'lines',
+        type: 'scatter',
+        name: idx === 0 ? 'Retícula M (|T| dB)' : '',
+        line: { color: '#8ab7d7', width: 0.8 },
+        opacity: 0.45,
+        hoverinfo: 'text',
+        hovertext: `Curva M: |T| = ${curve.label}`,
+        showlegend: idx === 0
+      });
+    });
+  }
+
+  // 4. Paso >= 5: Retícula de Fase N (Curvas arg(T) = cte en lazo cerrado)
+  if (state.step >= 5) {
+    nicholsGrid.nCurves.forEach((curve, idx) => {
+      traces.push({
+        x: curve.x,
+        y: curve.y,
+        mode: 'lines',
+        type: 'scatter',
+        name: idx === 0 ? 'Retícula N (∠T fase)' : '',
+        line: { color: '#bd9bd1', width: 0.8 },
+        opacity: 0.4,
+        hoverinfo: 'text',
+        hovertext: `Curva N: ∠T = ${curve.label}`,
+        showlegend: idx === 0
+      });
+    });
+  }
+
+  // 5. Paso >= 1: Puntos muestreados de frecuencia
+  if (state.step >= 1) {
+    const sampleIndices = [0, 80, 250, 500, 800, 1100, 1400, state.wList.length - 1].filter(idx => idx < state.wList.length);
+    const samplePtsX = [];
+    const samplePtsY = [];
+    const sampleText = [];
+    sampleIndices.forEach(idx => {
+      if (isFinite(freqResp.phase[idx]) && isFinite(freqResp.mag[idx])) {
+        samplePtsX.push(freqResp.phase[idx]);
+        samplePtsY.push(freqResp.mag[idx]);
+        sampleText.push(`ω=${state.wList[idx].toPrecision(3)}`);
+      }
+    });
+
+    traces.push({
+      x: samplePtsX,
+      y: samplePtsY,
+      mode: 'markers+text',
+      type: 'scatter',
+      name: 'Puntos Muestreados',
+      text: sampleText,
+      textposition: 'top right',
+      textfont: { size: 9, color: '#f6bd60' },
+      marker: { color: '#f6bd60', size: 6 }
+    });
+  }
+
+  // 6. Paso >= 2: Curva de Nichols completa L(jw)
+  if (state.step >= 2) {
+    traces.push({
+      x: freqResp.phase,
+      y: freqResp.mag,
+      mode: 'lines',
+      type: 'scatter',
+      name: 'L(jω) Original',
+      line: { color: '#ffa726', width: 2.5 }
+    });
+
+    // Indicador de sentido creciente de w
+    if (phases.length > 40) {
+      const midIdx = Math.floor(phases.length * 0.45);
+      const nextIdx = midIdx + 15;
+      traces.push({
+        x: [phases[nextIdx]],
+        y: [mags[nextIdx]],
+        mode: 'markers',
+        type: 'scatter',
+        name: 'Sentido ω creciente',
+        marker: { color: '#ffd700', size: 9, symbol: 'triangle-right' },
+        showlegend: false
+      });
+    }
+  }
+
+  // 7. Paso >= 3: Lectura de Márgenes MF y MG
+  if (state.step >= 3) {
+    if (m.w_gc && m.PM !== null) {
+      const pGc = m.PM - 180;
+      traces.push({
+        x: [-180, pGc],
+        y: [0, 0],
+        mode: 'lines+markers',
+        type: 'scatter',
+        name: `MF = ${m.PM.toFixed(2)}°`,
+        line: { color: '#4ade80', width: 2.8 },
+        marker: { size: 6, color: '#4ade80' }
+      });
+    }
+
+    if (m.w_pc && m.GM !== null) {
+      traces.push({
+        x: [-180, -180],
+        y: [-m.GM, 0],
+        mode: 'lines+markers',
+        type: 'scatter',
+        name: `MG = ${m.GM.toFixed(2)} dB`,
+        line: { color: '#e879f9', width: 2.8 },
+        marker: { size: 6, color: '#e879f9' }
+      });
+    }
+  }
+
+  // 8. Paso >= 5: Lectura en punto de cruce o frecuencia seleccionada
+  let readingText = "";
+  if (state.step >= 5) {
+    const selW = (m.w_gc && m.w_gc > 0) ? m.w_gc : (state.wList[Math.floor(state.wList.length / 2)] || 1.0);
+    const reading = getClosedLoopReading(num, den, selW);
+    readingText = reading.text;
+
+    if (!reading.isSingular) {
+      traces.push({
+        x: [reading.LphaseDeg],
+        y: [reading.LmagDb],
+        mode: 'markers+text',
+        type: 'scatter',
+        name: `T(jω) en ω=${selW.toFixed(2)}`,
+        text: [`|T|=${reading.TmagDb.toFixed(1)} dB`],
+        textposition: 'bottom right',
+        marker: { color: '#00e5ff', size: 8, symbol: 'diamond' }
+      });
+    }
+  }
+
+  // 9. Paso >= 6: Comparación con Sistema Compensado
+  if (state.step >= 6 && state.compResult) {
+    const cResp = state.compResult.compResp;
+    const cMargins = state.compResult.compMargins;
+    traces.push({
+      x: cResp.phase,
+      y: cResp.mag,
+      mode: 'lines',
+      type: 'scatter',
+      name: 'L(jω) Compensado',
+      line: { color: '#00e5ff', width: 2.2 }
+    });
+
+    if (cMargins.w_gc && cMargins.PM !== null) {
+      const cpGc = cMargins.PM - 180;
+      traces.push({
+        x: [-180, cpGc],
+        y: [0, 0],
+        mode: 'lines',
+        type: 'scatter',
+        name: `MF comp = ${cMargins.PM.toFixed(2)}°`,
+        line: { color: '#00e5ff', dash: 'dot', width: 2 }
+      });
+    }
+  }
+
+  // Explicaciones didácticas por paso (0 a 6)
+  let title = "";
+  let desc = "";
+
+  if (state.step === 0) {
+    title = "Paso 0: Fundamentos de la Carta de Nichols";
+    desc = `
+      <p>La <b>Carta de Nichols</b> representa la respuesta en frecuencia de lazo abierto <b>L(jω) = G(jω)H(jω)</b> mapeando la fase y la magnitud en dB en coordenadas cartesianas:</p>
+      <div class="metric-grid">
+        <div class="metric-card">
+          <div class="metric-lbl">Eje Horizontal (X)</div>
+          <div class="metric-val" style="color:#38bdf8;">Fase ∠L (°)</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-lbl">Eje Vertical (Y)</div>
+          <div class="metric-val" style="color:#f59e0b;">20·log10|L| (dB)</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-lbl">Punto Crítico</div>
+          <div class="metric-val" style="color:#ef4444;">(-180°, 0 dB)</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-lbl">Parámetro Curva</div>
+          <div class="metric-val" style="color:#4ade80;">Frecuencia ω</div>
+        </div>
+      </div>
+      <div style="background:#171728; padding:8px; border-radius:6px; margin:6px 0;">
+        <p><b>🎯 Punto Crítico -1+j0 en Nichols:</b></p>
+        <p style="font-size:12px; margin-top:3px;">En el plano polar de Nyquist, el punto crítico de estabilidad es -1+j0 (amplitud 1.0, ángulo -180°). En la Carta de Nichols, este punto aparece exactamente en <b>(-180°, 0 dB)</b> y se repite periódicamente cada 360° (-540°, +180°, etc.).</p>
+      </div>
+      <p style="font-size:11px; color:#94a3b8;">Avanza al siguiente paso para ver cómo convertir frecuencias individuales en coordenadas cartesianas.</p>
+    `;
+  } else if (state.step === 1) {
+    title = "Paso 1: Convertir Frecuencias en Puntos (φ, dB)";
+    desc = `
+      <p>Para construir la curva a mano en exámenes, se evalúa L(s) en s = jω para varias frecuencias clave:</p>
+      <div style="background:#11111e; padding:6px; border-radius:6px; margin:6px 0; text-align:center;">
+        ${renderTex('s = j\\omega \\implies r = |L(j\\omega)|, \\quad \\phi = \\angle L(j\\omega) \\implies (\\phi, \\; 20\\log_{10} r)', true)}
+      </div>
+      <div class="pedagogy-tip">
+        <b>📝 Procedimiento para graficar a mano:</b><br>
+        1. Evalúa el módulo |L(jω)| y conviértelo a dB: <code>20·log10(|L|)</code>.<br>
+        2. Evalúa el desfase total en grados: <code>∠L(jω) = Σ∠ceros - Σ∠polos</code>.<br>
+        3. Marca cada par ordenado <b>(∠L, dB)</b> sobre los ejes de la carta.
+      </div>
+    `;
+  } else if (state.step === 2) {
+    title = "Paso 2: Trazo Continuo y Sentido de Recorrido";
+    desc = `
+      <p>Al unir los puntos en orden de frecuencia creciente (indicado por la flecha dorada), se forma la curva de Nichols:</p>
+      <div style="background:#171728; padding:8px; border-radius:6px; margin:6px 0;">
+        <p><b>⚡ Efecto de la Ganancia K en Nichols:</b></p>
+        <p style="font-size:12px; margin-top:4px;">Multiplicar la planta por una ganancia positiva K <b>desplaza toda la curva verticalmente</b> hacia arriba o abajo en <code>20·log10(K) dB</code> sin alterar su fase horizontal. Esto hace que Nichols sea la herramienta preferida para elegir la ganancia de diseño con rapidez visual.</p>
+      </div>
+    `;
+  } else if (state.step === 3) {
+    title = "Paso 3: Lectura Directa de Márgenes de Estabilidad";
+    desc = `
+      <p>Los márgenes de fase y ganancia se leen visualmente con respecto al punto crítico <b>(-180°, 0 dB)</b>:</p>
+      <div class="metric-grid">
+        <div class="metric-card">
+          <div class="metric-lbl">Margen de Fase (MF)</div>
+          <div class="metric-val" style="color:#4ade80;">${m.PM !== null ? m.PM.toFixed(2) + '°' : 'N/A'}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-lbl">Margen de Ganancia (MG)</div>
+          <div class="metric-val" style="color:#e879f9;">${m.GM !== null ? m.GM.toFixed(2) + ' dB' : '∞'}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-lbl">Cruce Ganancia ω_gc</div>
+          <div class="metric-val" style="color:#38bdf8;">${m.w_gc ? m.w_gc.toFixed(3) + ' rad/s' : 'N/A'}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-lbl">Cruce Fase ω_pc</div>
+          <div class="metric-val" style="color:#f59e0b;">${m.w_pc ? m.w_pc.toFixed(3) + ' rad/s' : 'N/A'}</div>
+        </div>
+      </div>
+      <div style="background:#171728; padding:8px; border-radius:6px; margin:6px 0; font-size:12px;">
+        • <b>Línea Verde (0 dB):</b> La distancia angular horizontal desde -180° hasta el cruce de 0 dB es el <b>Margen de Fase</b>.<br>
+        • <b>Línea Magenta (-180°):</b> La distancia vertical desde la curva hasta 0 dB en el cruce de -180° es el <b>Margen de Ganancia</b>.
+      </div>
+    `;
+  } else if (state.step === 4) {
+    title = "Paso 4: Retícula M de Magnitud de Lazo Cerrado";
+    desc = `
+      <p>La retícula M traza contornos donde la magnitud de lazo cerrado <b>|T(jω)| = |L/(1+L)|</b> es constante:</p>
+      <div style="background:#11111e; padding:6px; border-radius:6px; margin:6px 0; text-align:center;">
+        ${renderTex('|T| = \\frac{r}{\\sqrt{1 + r^2 + 2r\\cos\\phi}} = \\text{constante } (M \\text{ dB})', true)}
+      </div>
+      <div style="background:#171728; padding:8px; border-radius:6px; margin:6px 0; font-size:12px;">
+        • Las curvas azules suaves corresponden a valores de <b>dB de lazo cerrado</b> (+12, +6, +3, 0, -3 dB, etc.).<br>
+        • La curva M más alta tangente a la trayectoria de Nichols determina el <b>Pico de Resonancia Mp</b> del sistema en lazo cerrado.
+      </div>
+    `;
+  } else if (state.step === 5) {
+    title = "Paso 5: Retícula N de Fase y Lectura de Lazo Cerrado";
+    desc = `
+      <p>Las curvas N (moradas) corresponden a desfase constante de lazo cerrado <b>∠T(jω)</b>:</p>
+      <div style="background:#11111e; padding:6px; border-radius:6px; margin:6px 0; text-align:center;">
+        ${renderTex('\\angle T = \\phi - \\arg(1 + r\\cdot e^{j\\phi})', true)}
+      </div>
+      <div style="background:#171728; padding:8px; border-radius:6px; margin:6px 0;">
+        <p><b>📍 Lectura exacta de lazo cerrado T(jω) sobre la curva:</b></p>
+        <p style="color:#00e5ff; font-weight:bold; font-size:12px; margin-top:4px;">${readingText}</p>
+        <p style="font-size:11px; color:#94a3b8; margin-top:3px;">Permite leer directamente la respuesta de lazo cerrado sin tener que calcular el polinomio característico D(s)+N(s).</p>
+      </div>
+    `;
+  } else {
+    title = "Paso 6: Comparación con Sistema Compensado";
+    desc = `
+      <p>Compara la planta original (naranja) frente a la planta con el compensador diseñado (cian):</p>
+      <div class="metric-grid">
+        <div class="metric-card">
+          <div class="metric-lbl">MF Original</div>
+          <div class="metric-val" style="color:#ffa726;">${m.PM !== null ? m.PM.toFixed(2) + '°' : 'N/A'}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-lbl">MF Compensado</div>
+          <div class="metric-val" style="color:#00e5ff;">${state.compResult ? state.compResult.compMargins.PM.toFixed(2) + '°' : 'N/A'}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-lbl">Estado Lazo Cerrado</div>
+          <div class="metric-val" style="color:#4ade80;">${state.compResult ? state.compResult.clStatus.toUpperCase() : 'N/A'}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-lbl">Compensador</div>
+          <div class="metric-val" style="color:#a78bfa;">${state.compResult ? state.compResult.explanation[0] : 'Diseña uno en ⚙️'}</div>
+        </div>
+      </div>
+      <div style="background:#171728; padding:8px; border-radius:6px; margin:6px 0; font-size:12px;">
+        Observa cómo el compensador traslada la curva alejándola del punto crítico <b>(-180°, 0 dB)</b>, aumentando el margen de fase y reduciendo el pico de resonancia de la retícula M.
+      </div>
+    `;
+  }
+
+  explanationTitle.textContent = title;
+  explanationBody.innerHTML = cleanMath(desc);
+
+  const layout = {
+    ...darkLayoutCommon,
+    dragmode: getEffectiveDragMode(),
+    xaxis: {
+      title: 'Fase de L(jω) [grados]',
+      gridcolor: '#33334d',
+      range: [xMin, xMax]
+    },
+    yaxis: {
+      title: 'Magnitud de L(jω) [dB]',
+      gridcolor: '#33334d',
+      range: [yMin, yMax]
+    }
+  };
+
+  Plotly.newPlot(plotContainer, traces, layout, plotlyConfig);
+}
+
+// ==========================================
+// 4. LUGAR DE LAS RAÍCES (ROOT LOCUS)
 // ==========================================
 function renderLocusPlot() {
   state.maxSteps = 3;
@@ -1730,12 +2149,19 @@ function renderStepPlot() {
 // CONTROLES AVANZADOS DE NAVEGACIÓN Y ZOOM
 // ==========================================
 
-// Centrar en -1 (Nyquist)
+// Centrar en punto crítico (-1 en Nyquist, -180°, 0 dB en Nichols)
 btnFocusCrit.addEventListener('click', () => {
-  Plotly.relayout(plotContainer, {
-    'xaxis.range': [-2.2, 1.2],
-    'yaxis.range': [-1.6, 1.6]
-  });
+  if (state.currentTab === 'nichols') {
+    Plotly.relayout(plotContainer, {
+      'xaxis.range': [-240, -120],
+      'yaxis.range': [-30, 30]
+    });
+  } else {
+    Plotly.relayout(plotContainer, {
+      'xaxis.range': [-2.2, 1.2],
+      'yaxis.range': [-1.6, 1.6]
+    });
+  }
 });
 
 // Generador de la solución matemática completa paso a paso
@@ -1960,9 +2386,35 @@ function populateFullSolutionModal() {
       <p><b>Conclusión:</b> ${poles.filter(p => p.re > 1e-5).length === 0 ? '<span class="badge badge-success">ESTABLE</span> No existen raíces de lazo cerrado en el semiplano derecho.' : '<span class="badge badge-danger">INESTABLE</span> Existen raíces en el semiplano derecho.'}</p>
     </div>
 
-    <!-- 6. Reglas del Lugar de las Raíces -->
+    <!-- 6. Carta de Nichols y Retícula de Lazo Cerrado -->
     <div class="sol-section">
-      <h3>🎯 6. Reglas Universales de Evans para el Lugar de las Raíces</h3>
+      <h3>📊 6. Carta de Nichols y Retícula de Lazo Cerrado T(jω)</h3>
+      <p>Transformación de la respuesta de lazo abierto L(jω) a coordenadas cartesianas (Fase en grados vs dB):</p>
+      <div class="metric-grid">
+        <div class="metric-card">
+          <div class="metric-lbl">Margen de Fase (0 dB)</div>
+          <div class="metric-val" style="color:#4ade80;">${margins.PM !== null ? margins.PM.toFixed(2) + '°' : 'N/A'}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-lbl">Margen de Ganancia (-180°)</div>
+          <div class="metric-val" style="color:#e879f9;">${margins.GM !== null ? margins.GM.toFixed(2) + ' dB' : '∞'}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-lbl">Distancia a (-180°, 0 dB)</div>
+          <div class="metric-val" style="color:#38bdf8;">${margins.PM !== null ? margins.PM.toFixed(1) + '° horizontal' : 'Segura'}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-lbl">Punto Crítico</div>
+          <div class="metric-val" style="color:#ef4444;">(-180°, 0 dB)</div>
+        </div>
+      </div>
+      <p style="font-size:12px; margin-top:6px;">• <b>Retícula M:</b> Permite leer la magnitud de lazo cerrado |T(jω)| en dB y hallar el pico de resonancia Mp.<br>
+      • <b>Retícula N:</b> Permite leer el desfase de lazo cerrado ∠T(jω) en grados directamente sobre la curva abierta.</p>
+    </div>
+
+    <!-- 7. Reglas del Lugar de las Raíces -->
+    <div class="sol-section">
+      <h3>🎯 7. Reglas Universales de Evans para el Lugar de las Raíces</h3>
       ${(() => {
         const n = poles.length;
         const m = zeros.length;

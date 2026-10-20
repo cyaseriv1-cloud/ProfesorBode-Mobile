@@ -1350,3 +1350,126 @@ export function getBodeComponents(num, den, wList) {
         intervals
     };
 }
+
+/**
+ * Retícula de Nichols: Curvas M (magnitud de lazo cerrado en dB) y Curvas N (fase de lazo cerrado en grados)
+ * Se derivan de T = L / (1 + L) <=> L = T / (1 - T)
+ */
+export function getNicholsGrid() {
+    const mCurves = [];
+    const nCurves = [];
+
+    // Curvas M de lazo cerrado: -40 dB a +12 dB
+    const mValues = [-40, -20, -12, -6, -3, -1, 0, 1, 3, 6, 12];
+    for (const mDb of mValues) {
+        const M = Math.pow(10, mDb / 20);
+        const x = [];
+        const y = [];
+        const numPts = 160;
+        const psiMin = -359.5 * Math.PI / 180;
+        const psiMax = -0.5 * Math.PI / 180;
+        const step = (psiMax - psiMin) / (numPts - 1);
+
+        for (let i = 0; i < numPts; i++) {
+            const psi = psiMin + i * step;
+            const Tre = M * Math.cos(psi);
+            const Tim = M * Math.sin(psi);
+            const dRe = 1 - Tre;
+            const dIm = -Tim;
+            const dMag2 = dRe * dRe + dIm * dIm;
+            if (dMag2 < 1e-12) continue;
+
+            const Lre = (Tre * dRe + Tim * dIm) / dMag2;
+            const Lim = (Tim * dRe - Tre * dIm) / dMag2;
+            const Lmag = Math.hypot(Lre, Lim);
+            const Ldb = 20 * Math.log10(Math.max(Lmag, 1e-12));
+            let Ldeg = Math.atan2(Lim, Lre) * 180 / Math.PI;
+
+            while (Ldeg > 0) Ldeg -= 360;
+            while (Ldeg < -360) Ldeg += 360;
+
+            x.push(Ldeg);
+            y.push(Ldb);
+        }
+        mCurves.push({ mDb, label: `${mDb >= 0 ? '+' : ''}${mDb} dB`, x, y });
+    }
+
+    // Curvas N de lazo cerrado: fases constantes
+    const nValues = [-330, -270, -210, -180, -150, -90, -30];
+    for (const nDeg of nValues) {
+        const psi = nDeg * Math.PI / 180;
+        const x = [];
+        const y = [];
+        const numPts = 120;
+        for (let i = 0; i < numPts; i++) {
+            const mDb = -50 + i * (35 - (-50)) / (numPts - 1);
+            const M = Math.pow(10, mDb / 20);
+            const Tre = M * Math.cos(psi);
+            const Tim = M * Math.sin(psi);
+            const dRe = 1 - Tre;
+            const dIm = -Tim;
+            const dMag2 = dRe * dRe + dIm * dIm;
+            if (dMag2 < 1e-12) continue;
+
+            const Lre = (Tre * dRe + Tim * dIm) / dMag2;
+            const Lim = (Tim * dRe - Tre * dIm) / dMag2;
+            const Lmag = Math.hypot(Lre, Lim);
+            const Ldb = 20 * Math.log10(Math.max(Lmag, 1e-12));
+            let Ldeg = Math.atan2(Lim, Lre) * 180 / Math.PI;
+
+            while (Ldeg > 0) Ldeg -= 360;
+            while (Ldeg < -360) Ldeg += 360;
+
+            x.push(Ldeg);
+            y.push(Ldb);
+        }
+        nCurves.push({ nDeg, label: `${nDeg}°`, x, y });
+    }
+
+    return { mCurves, nCurves };
+}
+
+/**
+ * Lectura exacta de T(jw) = L(jw)/(1 + L(jw)) en una frecuencia dada
+ */
+export function getClosedLoopReading(num, den, w) {
+    const resp = bodeValues(num, den, [w]);
+    const Lre = resp.real[0];
+    const Lim = resp.imag[0];
+    const LmagDb = resp.mag[0];
+    const LphaseDeg = resp.phase[0];
+
+    const dRe = 1 + Lre;
+    const dIm = Lim;
+    const dMag2 = dRe * dRe + dIm * dIm;
+
+    if (dMag2 < 1e-12) {
+        return {
+            w,
+            LmagDb,
+            LphaseDeg,
+            isSingular: true,
+            Tmag: Infinity,
+            TmagDb: Infinity,
+            TphaseDeg: 0,
+            text: 'En este punto 1 + L = 0: T es singular y no hay lectura finita.'
+        };
+    }
+
+    const Tre = (Lre * dRe + Lim * dIm) / dMag2;
+    const Tim = (Lim * dRe - Lre * dIm) / dMag2;
+    const Tmag = Math.hypot(Tre, Tim);
+    const TmagDb = 20 * Math.log10(Math.max(Tmag, 1e-12));
+    let TphaseDeg = Math.atan2(Tim, Tre) * 180 / Math.PI;
+
+    return {
+        w,
+        LmagDb,
+        LphaseDeg,
+        isSingular: false,
+        Tmag,
+        TmagDb,
+        TphaseDeg,
+        text: `|T| = ${Tmag.toFixed(3)}; 20·log10|T| = ${TmagDb.toFixed(2)} dB; ∠T = ${TphaseDeg.toFixed(2)}° (mód 360°)`
+    };
+}
